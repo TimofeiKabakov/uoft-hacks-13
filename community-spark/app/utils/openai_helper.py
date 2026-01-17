@@ -13,10 +13,7 @@ from dotenv import load_dotenv
 # Load environment variables FIRST (before accessing them)
 load_dotenv()
 
-# Initialize OpenAI client (will be None if API key not set)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-
-# Try to initialize OpenAI client with error handling
 openai_client = None
 if OPENAI_API_KEY:
     try:
@@ -65,7 +62,6 @@ def llm_impact_decision(
         nearest_grocery_miles = community_metrics.get("nearest_grocery_miles", 1.0)
         nearest_pharmacy_miles = community_metrics.get("nearest_pharmacy_miles", 0.8)
         
-        # Calculate deterministic base multiplier
         base_multiplier = 1.0
         applied_factors = []
         
@@ -102,7 +98,6 @@ def llm_impact_decision(
             base_multiplier += 0.1
             applied_factors.append("moderate_competition")
         
-        # Set bounds for LLM (community multipliers typically 1.0-1.6)
         min_multiplier = max(1.0, base_multiplier - 0.1)
         max_multiplier = min(1.6, base_multiplier + 0.15)
         
@@ -176,12 +171,8 @@ Provide your multiplier and reasoning."""
         
         # STEP 3: Combine deterministic + LLM results
         llm_multiplier = float(llm_result.get("community_multiplier", base_multiplier))
-        
-        # Enforce bounds (safety check)
         final_multiplier = max(min_multiplier, min(max_multiplier, llm_multiplier))
         final_multiplier = round(final_multiplier, 2)
-        
-        # Build final reasoning (clean, no verbose brackets)
         reasoning = llm_result.get("reasoning", "Community impact assessed.")
         
         return {
@@ -280,7 +271,6 @@ def llm_compliance_rationale(
         return None
     
     try:
-        # Build policy check summary
         failed_checks = [c for c in policy_checks if not c.get("passed", True)]
         passed_checks = [c for c in policy_checks if c.get("passed", False)]
         
@@ -347,7 +337,6 @@ Provide a professional 2-3 sentence explanation for this {final_decision} decisi
         result = json.loads(response.choices[0].message.content)
         rationale = result.get("rationale", "")
         
-        # Return clean rationale (method is tracked separately in log)
         return rationale
     
     except Exception as e:
@@ -397,7 +386,6 @@ Provide a clear, professional 2-3 sentence rationale for this decision that the 
     
     except Exception as e:
         print(f"[WARNING] OpenAI API call failed: {str(e)}")
-        # Fallback to basic rationale
         return f"Decision: {final_decision} based on adjusted score of {adjusted_score:.1f}/100."
 
 
@@ -420,7 +408,6 @@ def llm_audit_decision(bank_data: dict) -> Optional[dict]:
         or None if LLM unavailable
     """
     if not openai_client:
-        # Fallback to rule-based if no API key
         return None
     
     try:
@@ -432,7 +419,6 @@ def llm_audit_decision(bank_data: dict) -> Optional[dict]:
         debt_to_income = bank_data.get('debt_to_income', 0.0)
         traditional_credit_score = bank_data.get('traditional_credit_score', 0)
         
-        # Calculate deterministic flags
         flags = []
         if avg_monthly_revenue == 0 or revenue_months == 0:
             flags.append("no_revenue")
@@ -451,7 +437,6 @@ def llm_audit_decision(bank_data: dict) -> Optional[dict]:
         if traditional_credit_score < 600:
             flags.append("low_traditional_credit_score")
         
-        # Calculate deterministic score bounds (hard constraints)
         if avg_monthly_revenue == 0 or revenue_months == 0:
             min_score, max_score = 1, 35  # Severe risk
         elif avg_monthly_revenue < 1000:
@@ -525,11 +510,7 @@ Provide your score and detailed reasoning."""
         
         # STEP 3: Combine deterministic + LLM results
         llm_score = int(llm_result.get("auditor_score", (min_score + max_score) // 2))
-        
-        # Enforce bounds (safety check)
         final_score = max(min_score, min(max_score, llm_score))
-        
-        # Build final reasoning (clean, no verbose brackets)
         reasoning = llm_result.get("reasoning", "Assessment completed.")
         
         return {

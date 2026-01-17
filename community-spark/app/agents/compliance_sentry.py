@@ -30,39 +30,26 @@ def compliance_node(state: CommunitySparkState) -> Dict[str, Any]:
     Returns:
         Dict with updated state containing final_decision, decision_rationale, loan_terms, and log entry
     """
-    # Get scores from state
     auditor_score = state.get("auditor_score", 0)
     community_multiplier = state.get("community_multiplier", 1.0)
     bank_data = state.get("bank_data", {})
     nsf_count = bank_data.get("nsf_count", 0)
-    
-    # Get agent summaries for LLM context
     auditor_summary = state.get("auditor_summary", "")
     impact_summary = state.get("impact_summary", "")
     
-    # Determine decision path by checking if impact node ran
-    # If community_multiplier is exactly 1.0 and wasn't explicitly set, impact node likely didn't run
-    # Check log to see if impact_analyst ran
     log = state.get("log", [])
     impact_ran = any(entry.get("agent") == "impact_analyst" for entry in log)
     decision_path = "auditor->impact->compliance" if impact_ran else "auditor->compliance"
     
-    # Baseline score is the auditor_score
     baseline_score = auditor_score
-    
-    # Calculate adjusted score
     adjusted_score = baseline_score * community_multiplier
-    
-    # Track policy floor checks
     policy_floor_checks = []
     
-    # Apply guardrails to determine final_decision
     final_decision: str
     decision_rationale: str
     loan_terms: Dict | None = None
-    llm_rationale = None  # Track if LLM was used
+    llm_rationale = None
     
-    # Guardrail 1: Hard denial conditions
     if auditor_score < 40 or nsf_count >= 2:
         final_decision = "DENY"
         reasons = []
@@ -100,11 +87,9 @@ def compliance_node(state: CommunitySparkState) -> Dict[str, Any]:
                 "passed": True
             })
         
-        # Basic rationale
         basic_rationale = f"Application denied due to: {', '.join(reasons)}. "
         basic_rationale += f"Adjusted score: {adjusted_score:.1f} (auditor: {auditor_score}, multiplier: {community_multiplier}x)."
         
-        # Try LLM-enhanced rationale
         llm_rationale = llm_compliance_rationale(
             final_decision="DENY",
             auditor_score=auditor_score,
@@ -118,40 +103,20 @@ def compliance_node(state: CommunitySparkState) -> Dict[str, Any]:
         decision_rationale = llm_rationale if llm_rationale else basic_rationale
         loan_terms = None
     
-    # Guardrail 2: Auto-approval for high adjusted scores
     elif adjusted_score >= 75:
-        # Check policy floors first
-        if auditor_score < 40:
-            policy_floor_checks.append({
-                "check": "auditor_score_floor",
-                "threshold": 40,
-                "value": auditor_score,
-                "passed": False,
-                "reason": f"Score {auditor_score} below minimum threshold of 40"
-            })
-        else:
-            policy_floor_checks.append({
-                "check": "auditor_score_floor",
-                "threshold": 40,
-                "value": auditor_score,
-                "passed": True
-            })
+        policy_floor_checks.append({
+            "check": "auditor_score_floor",
+            "threshold": 40,
+            "value": auditor_score,
+            "passed": True
+        })
         
-        if nsf_count >= 2:
-            policy_floor_checks.append({
-                "check": "nsf_count_limit",
-                "threshold": 2,
-                "value": nsf_count,
-                "passed": False,
-                "reason": f"NSF count {nsf_count} exceeds maximum allowed (2)"
-            })
-        else:
-            policy_floor_checks.append({
-                "check": "nsf_count_limit",
-                "threshold": 2,
-                "value": nsf_count,
-                "passed": True
-            })
+        policy_floor_checks.append({
+            "check": "nsf_count_limit",
+            "threshold": 2,
+            "value": nsf_count,
+            "passed": True
+        })
         
         policy_floor_checks.append({
             "check": "adjusted_score_threshold",
@@ -163,14 +128,12 @@ def compliance_node(state: CommunitySparkState) -> Dict[str, Any]:
         
         final_decision = "APPROVE"
         
-        # Basic rationale
         basic_rationale = (
             f"Application approved. Adjusted score: {adjusted_score:.1f} "
             f"(auditor: {auditor_score}, community multiplier: {community_multiplier}x). "
             f"Meets approval threshold of 75."
         )
         
-        # Try LLM-enhanced rationale
         llm_rationale = llm_compliance_rationale(
             final_decision="APPROVE",
             auditor_score=auditor_score,
@@ -183,8 +146,6 @@ def compliance_node(state: CommunitySparkState) -> Dict[str, Any]:
         
         decision_rationale = llm_rationale if llm_rationale else basic_rationale
         
-        # Generate loan terms based on score
-        # Higher scores get better terms
         if adjusted_score >= 90:
             interest_rate = 6.5
             loan_amount_mult = 1.2
@@ -195,7 +156,6 @@ def compliance_node(state: CommunitySparkState) -> Dict[str, Any]:
             interest_rate = 7.5
             loan_amount_mult = 1.0
         
-        # Estimate loan amount based on revenue (if available)
         avg_monthly_revenue = bank_data.get("avg_monthly_revenue", 0)
         base_loan_amount = max(10000, min(100000, avg_monthly_revenue * 3 * loan_amount_mult)) if avg_monthly_revenue > 0 else 50000
         
@@ -205,41 +165,20 @@ def compliance_node(state: CommunitySparkState) -> Dict[str, Any]:
             "term_months": 36,
             "monthly_payment": int((base_loan_amount * (interest_rate / 100 / 12) * (1 + (interest_rate / 100 / 12)) ** 36) / (((1 + (interest_rate / 100 / 12)) ** 36) - 1))
         }
-    
-    # Guardrail 3: Refer for manual review
     else:
-        # Check policy floors
-        if auditor_score < 40:
-            policy_floor_checks.append({
-                "check": "auditor_score_floor",
-                "threshold": 40,
-                "value": auditor_score,
-                "passed": False,
-                "reason": f"Score {auditor_score} below minimum threshold of 40"
-            })
-        else:
-            policy_floor_checks.append({
-                "check": "auditor_score_floor",
-                "threshold": 40,
-                "value": auditor_score,
-                "passed": True
-            })
+        policy_floor_checks.append({
+            "check": "auditor_score_floor",
+            "threshold": 40,
+            "value": auditor_score,
+            "passed": True
+        })
         
-        if nsf_count >= 2:
-            policy_floor_checks.append({
-                "check": "nsf_count_limit",
-                "threshold": 2,
-                "value": nsf_count,
-                "passed": False,
-                "reason": f"NSF count {nsf_count} exceeds maximum allowed (2)"
-            })
-        else:
-            policy_floor_checks.append({
-                "check": "nsf_count_limit",
-                "threshold": 2,
-                "value": nsf_count,
-                "passed": True
-            })
+        policy_floor_checks.append({
+            "check": "nsf_count_limit",
+            "threshold": 2,
+            "value": nsf_count,
+            "passed": True
+        })
         
         policy_floor_checks.append({
             "check": "adjusted_score_threshold",
@@ -251,14 +190,12 @@ def compliance_node(state: CommunitySparkState) -> Dict[str, Any]:
         
         final_decision = "REFER"
         
-        # Basic rationale
         basic_rationale = (
             f"Application requires manual review. Adjusted score: {adjusted_score:.1f} "
             f"(auditor: {auditor_score}, community multiplier: {community_multiplier}x). "
             f"Below auto-approval threshold of 75 but meets minimum criteria."
         )
         
-        # Try LLM-enhanced rationale
         llm_rationale = llm_compliance_rationale(
             final_decision="REFER",
             auditor_score=auditor_score,
@@ -272,10 +209,8 @@ def compliance_node(state: CommunitySparkState) -> Dict[str, Any]:
         decision_rationale = llm_rationale if llm_rationale else basic_rationale
         loan_terms = None
     
-    # Determine method (check if LLM rationale was used)
     method = "hybrid-explanation" if llm_rationale else "rule-based"
     
-    # Append log entry
     log.append({
         "agent": "compliance_sentry",
         "message": f"Compliance decision: {final_decision}. Adjusted score: {adjusted_score:.1f}",
@@ -285,7 +220,6 @@ def compliance_node(state: CommunitySparkState) -> Dict[str, Any]:
         "step": "compliance_check_complete"
     })
     
-    # Build explain object
     explain = {
         "baseline_score": baseline_score,
         "community_multiplier": community_multiplier,
