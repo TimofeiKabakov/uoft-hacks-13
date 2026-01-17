@@ -262,6 +262,8 @@ with tab1:
                     # Show method badge if present
                     if method == "hybrid":
                         log_html += ' <span style="background: #2196F3; color: white; padding: 2px 8px; border-radius: 3px; font-size: 0.8em; margin-left: 8px;">HYBRID AI</span>'
+                    elif method == "hybrid-explanation":
+                        log_html += ' <span style="background: #673AB7; color: white; padding: 2px 8px; border-radius: 3px; font-size: 0.8em; margin-left: 8px;">RULES + AI EXPLANATION</span>'
                     elif method == "llm":
                         log_html += ' <span style="background: #4CAF50; color: white; padding: 2px 8px; border-radius: 3px; font-size: 0.8em; margin-left: 8px;">AI-POWERED</span>'
                     elif method == "rule-based":

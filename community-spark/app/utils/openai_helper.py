@@ -181,17 +181,17 @@ Provide your multiplier and reasoning."""
         final_multiplier = max(min_multiplier, min(max_multiplier, llm_multiplier))
         final_multiplier = round(final_multiplier, 2)
         
-        # Build final reasoning with transparency
+        # Build final reasoning (clean, no verbose brackets)
         reasoning = llm_result.get("reasoning", "Community impact assessed.")
-        reasoning_with_context = f"[Hybrid Analysis: Base {base_multiplier:.2f}x from community metrics, adjusted to {final_multiplier:.2f}x by AI] {reasoning}"
         
         return {
             "community_multiplier": final_multiplier,
-            "reasoning": reasoning_with_context,
+            "reasoning": reasoning,
             "applied_factors": applied_factors,
             "method": "hybrid",
             "deterministic_base": base_multiplier,
-            "llm_multiplier": llm_multiplier
+            "llm_multiplier": llm_multiplier,
+            "bounds_note": f"Multiplier bounded {min_multiplier:.2f}-{max_multiplier:.2f} from community metrics"  # Separate metadata
         }
     
     except Exception as e:
@@ -249,6 +249,112 @@ Provide a concise 2-3 sentence explanation of this business's potential positive
         return f"Community impact multiplier of {community_multiplier:.2f}x applied based on local need and business type."
 
 
+def llm_compliance_rationale(
+    final_decision: str,
+    auditor_score: int,
+    community_multiplier: float,
+    adjusted_score: float,
+    policy_checks: list,
+    auditor_summary: str = "",
+    impact_summary: str = ""
+) -> Optional[str]:
+    """
+    Generate LLM-enhanced rationale for compliance decision.
+    
+    Decision itself is deterministic (rule-based), but explanation uses LLM
+    for detailed, context-aware rationale that references agent findings.
+    
+    Args:
+        final_decision: APPROVE, DENY, or REFER (already decided by rules)
+        auditor_score: Financial score
+        community_multiplier: Impact multiplier
+        adjusted_score: Combined score
+        policy_checks: List of policy check results
+        auditor_summary: Auditor's reasoning
+        impact_summary: Impact analyst's reasoning
+        
+    Returns:
+        Detailed rationale string, or None if LLM unavailable
+    """
+    if not openai_client:
+        return None
+    
+    try:
+        # Build policy check summary
+        failed_checks = [c for c in policy_checks if not c.get("passed", True)]
+        passed_checks = [c for c in policy_checks if c.get("passed", False)]
+        
+        system_prompt = f"""You are a Senior Loan Compliance Officer explaining a lending decision.
+Your role is to provide a clear, professional explanation for a **{final_decision}** decision.
+
+You must respond with ONLY a JSON object (no markdown, no extra text):
+{{
+  "rationale": "<2-3 sentence professional explanation>"
+}}
+
+IMPORTANT:
+- The decision ({final_decision}) was made by regulatory rules, NOT by you
+- Your job is to EXPLAIN why this decision makes sense
+- Reference specific data points and agent findings
+- Be clear, fair, and professional
+- If DENY: Be empathetic but firm about regulatory requirements
+- If APPROVE: Highlight strengths and confirm compliance
+- If REFER: Explain what needs manual review"""
+
+        user_prompt = f"""Explain this {final_decision} decision:
+
+**Deterministic Decision Analysis:**
+- Base Score (Auditor): {auditor_score}/100
+- Community Multiplier (Impact): {community_multiplier:.2f}x
+- Adjusted Score: {adjusted_score:.1f}/100
+- Final Decision: {final_decision}
+
+**Policy Checks:**
+"""
+        
+        if failed_checks:
+            user_prompt += "Failed:\n"
+            for check in failed_checks:
+                user_prompt += f"  - {check.get('check')}: {check.get('value')} (threshold: {check.get('threshold')}) - {check.get('reason', '')}\n"
+        
+        if passed_checks:
+            user_prompt += "Passed:\n"
+            for check in passed_checks:
+                user_prompt += f"  - {check.get('check')}: {check.get('value')} vs threshold {check.get('threshold')}\n"
+        
+        user_prompt += f"""
+**Agent Findings:**
+Auditor Assessment: {auditor_summary[:200] if auditor_summary else 'N/A'}
+Impact Assessment: {impact_summary[:200] if impact_summary else 'N/A'}
+
+Provide a professional 2-3 sentence explanation for this {final_decision} decision that:
+1. References the key factors (scores, policy checks)
+2. Acknowledges both financial and community aspects
+3. Is clear and actionable for the applicant"""
+
+        response = openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.3,
+            max_tokens=300
+        )
+        
+        import json
+        result = json.loads(response.choices[0].message.content)
+        rationale = result.get("rationale", "")
+        
+        # Return clean rationale (method is tracked separately in log)
+        return rationale
+    
+    except Exception as e:
+        print(f"[WARNING] LLM compliance rationale failed, using basic fallback: {str(e)}")
+        return None
+
+
 def llm_enhance_compliance_rationale(
     final_decision: str,
     auditor_score: int,
@@ -257,19 +363,9 @@ def llm_enhance_compliance_rationale(
     policy_checks: list
 ) -> str:
     """
-    Use LLM to generate a detailed compliance decision rationale.
+    DEPRECATED: Use llm_compliance_rationale instead.
     
-    Falls back to basic summary if OpenAI is not configured.
-    
-    Args:
-        final_decision: APPROVE, DENY, or REFER
-        auditor_score: Base audit score
-        community_multiplier: Impact multiplier
-        adjusted_score: Final adjusted score
-        policy_checks: List of policy check results
-        
-    Returns:
-        Detailed rationale text
+    Kept for backward compatibility.
     """
     if not openai_client:
         return f"Decision: {final_decision}. Score: {auditor_score} → {adjusted_score:.1f} (multiplier: {community_multiplier:.2f}x)."
@@ -433,17 +529,17 @@ Provide your score and detailed reasoning."""
         # Enforce bounds (safety check)
         final_score = max(min_score, min(max_score, llm_score))
         
-        # Build final reasoning with transparency
+        # Build final reasoning (clean, no verbose brackets)
         reasoning = llm_result.get("reasoning", "Assessment completed.")
-        reasoning_with_context = f"[Hybrid Analysis: Score bounds {min_score}-{max_score} from risk rules, {final_score} from LLM analysis] {reasoning}"
         
         return {
             "auditor_score": final_score,
             "flags": flags,  # Use deterministic flags
-            "reasoning": reasoning_with_context,
+            "reasoning": reasoning,
             "method": "hybrid",  # Tag as hybrid
             "deterministic_bounds": [min_score, max_score],
-            "llm_score": llm_score
+            "llm_score": llm_score,
+            "bounds_note": f"Score bounded {min_score}-{max_score} by risk rules"  # Separate metadata
         }
     
     except Exception as e:

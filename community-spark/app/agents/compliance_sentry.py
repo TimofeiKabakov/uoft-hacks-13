@@ -1,12 +1,15 @@
 """
-Compliance Sentry Agent
+Compliance Sentry Agent (Hybrid-Explanation)
 
 This agent makes the final loan decision by combining audit scores
 with community multipliers and applying risk guardrails.
+
+Decision logic is deterministic (rule-based), but rationale is LLM-enhanced.
 """
 
 from typing import Dict, Any
 from app.state import CommunitySparkState
+from app.utils.openai_helper import llm_compliance_rationale
 
 
 def compliance_node(state: CommunitySparkState) -> Dict[str, Any]:
@@ -33,6 +36,10 @@ def compliance_node(state: CommunitySparkState) -> Dict[str, Any]:
     bank_data = state.get("bank_data", {})
     nsf_count = bank_data.get("nsf_count", 0)
     
+    # Get agent summaries for LLM context
+    auditor_summary = state.get("auditor_summary", "")
+    impact_summary = state.get("impact_summary", "")
+    
     # Determine decision path by checking if impact node ran
     # If community_multiplier is exactly 1.0 and wasn't explicitly set, impact node likely didn't run
     # Check log to see if impact_analyst ran
@@ -53,6 +60,7 @@ def compliance_node(state: CommunitySparkState) -> Dict[str, Any]:
     final_decision: str
     decision_rationale: str
     loan_terms: Dict | None = None
+    llm_rationale = None  # Track if LLM was used
     
     # Guardrail 1: Hard denial conditions
     if auditor_score < 40 or nsf_count >= 2:
@@ -92,8 +100,22 @@ def compliance_node(state: CommunitySparkState) -> Dict[str, Any]:
                 "passed": True
             })
         
-        decision_rationale = f"Application denied due to: {', '.join(reasons)}. "
-        decision_rationale += f"Adjusted score: {adjusted_score:.1f} (auditor: {auditor_score}, multiplier: {community_multiplier}x)."
+        # Basic rationale
+        basic_rationale = f"Application denied due to: {', '.join(reasons)}. "
+        basic_rationale += f"Adjusted score: {adjusted_score:.1f} (auditor: {auditor_score}, multiplier: {community_multiplier}x)."
+        
+        # Try LLM-enhanced rationale
+        llm_rationale = llm_compliance_rationale(
+            final_decision="DENY",
+            auditor_score=auditor_score,
+            community_multiplier=community_multiplier,
+            adjusted_score=adjusted_score,
+            policy_checks=policy_floor_checks,
+            auditor_summary=auditor_summary,
+            impact_summary=impact_summary
+        )
+        
+        decision_rationale = llm_rationale if llm_rationale else basic_rationale
         loan_terms = None
     
     # Guardrail 2: Auto-approval for high adjusted scores
@@ -140,11 +162,26 @@ def compliance_node(state: CommunitySparkState) -> Dict[str, Any]:
         })
         
         final_decision = "APPROVE"
-        decision_rationale = (
+        
+        # Basic rationale
+        basic_rationale = (
             f"Application approved. Adjusted score: {adjusted_score:.1f} "
             f"(auditor: {auditor_score}, community multiplier: {community_multiplier}x). "
             f"Meets approval threshold of 75."
         )
+        
+        # Try LLM-enhanced rationale
+        llm_rationale = llm_compliance_rationale(
+            final_decision="APPROVE",
+            auditor_score=auditor_score,
+            community_multiplier=community_multiplier,
+            adjusted_score=adjusted_score,
+            policy_checks=policy_floor_checks,
+            auditor_summary=auditor_summary,
+            impact_summary=impact_summary
+        )
+        
+        decision_rationale = llm_rationale if llm_rationale else basic_rationale
         
         # Generate loan terms based on score
         # Higher scores get better terms
@@ -213,17 +250,38 @@ def compliance_node(state: CommunitySparkState) -> Dict[str, Any]:
         })
         
         final_decision = "REFER"
-        decision_rationale = (
+        
+        # Basic rationale
+        basic_rationale = (
             f"Application requires manual review. Adjusted score: {adjusted_score:.1f} "
             f"(auditor: {auditor_score}, community multiplier: {community_multiplier}x). "
             f"Below auto-approval threshold of 75 but meets minimum criteria."
         )
+        
+        # Try LLM-enhanced rationale
+        llm_rationale = llm_compliance_rationale(
+            final_decision="REFER",
+            auditor_score=auditor_score,
+            community_multiplier=community_multiplier,
+            adjusted_score=adjusted_score,
+            policy_checks=policy_floor_checks,
+            auditor_summary=auditor_summary,
+            impact_summary=impact_summary
+        )
+        
+        decision_rationale = llm_rationale if llm_rationale else basic_rationale
         loan_terms = None
+    
+    # Determine method (check if LLM rationale was used)
+    method = "hybrid-explanation" if llm_rationale else "rule-based"
     
     # Append log entry
     log.append({
         "agent": "compliance_sentry",
-        "message": f"Final decision: {final_decision}. Adjusted score: {adjusted_score:.1f}",
+        "message": f"Compliance decision: {final_decision}. Adjusted score: {adjusted_score:.1f}",
+        "reasoning": decision_rationale,
+        "decision": final_decision,
+        "method": method,
         "step": "compliance_check_complete"
     })
     
