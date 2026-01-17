@@ -252,15 +252,30 @@ with tab1:
                 for log_entry in logs:
                     agent = log_entry.get("agent", "unknown")
                     message = log_entry.get("message", "")
+                    reasoning = log_entry.get("reasoning", "")
+                    method = log_entry.get("method", "")
                     step = log_entry.get("step", "")
                     
-                    st.markdown(f"""
-                    <div class="log-entry">
-                        <strong>🔹 {agent.upper()}</strong><br>
-                        {message}<br>
-                        <small>Step: {step}</small>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    # Build log display
+                    log_html = f'<div class="log-entry"><strong>🔹 {agent.upper()}</strong>'
+                    
+                    # Show method badge if present
+                    if method == "hybrid":
+                        log_html += ' <span style="background: #2196F3; color: white; padding: 2px 8px; border-radius: 3px; font-size: 0.8em; margin-left: 8px;">HYBRID AI</span>'
+                    elif method == "llm":
+                        log_html += ' <span style="background: #4CAF50; color: white; padding: 2px 8px; border-radius: 3px; font-size: 0.8em; margin-left: 8px;">AI-POWERED</span>'
+                    elif method == "rule-based":
+                        log_html += ' <span style="background: #FF9800; color: white; padding: 2px 8px; border-radius: 3px; font-size: 0.8em; margin-left: 8px;">RULE-BASED</span>'
+                    
+                    log_html += f'<br>{message}<br>'
+                    
+                    # Show detailed reasoning if available
+                    if reasoning:
+                        log_html += f'<br><em>Reasoning:</em> {reasoning}<br>'
+                    
+                    log_html += f'<small>Step: {step}</small></div>'
+                    
+                    st.markdown(log_html, unsafe_allow_html=True)
             else:
                 st.info("No log entries available")
             

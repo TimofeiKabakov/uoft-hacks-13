@@ -124,8 +124,14 @@ async def secrets_check():
     Returns boolean status for each secret without exposing values.
     Useful for debugging configuration issues.
     """
+    from app.utils.openai_helper import openai_client
+    
+    openai_key = os.getenv("OPENAI_API_KEY", "")
+    
     return {
-        "OPENAI_API_KEY": bool(os.getenv("OPENAI_API_KEY", "")),
+        "OPENAI_API_KEY": bool(openai_key),
+        "OPENAI_API_KEY_PREFIX": openai_key[:10] if openai_key else "N/A",
+        "OPENAI_CLIENT_INITIALIZED": openai_client is not None,
         "PLAID_CLIENT_ID": bool(os.getenv("PLAID_CLIENT_ID", "")),
         "PLAID_SECRET": bool(os.getenv("PLAID_SECRET", ""))
     }
