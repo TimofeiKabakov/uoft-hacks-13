@@ -256,8 +256,11 @@ with tab1:
                     method = log_entry.get("method", "")
                     step = log_entry.get("step", "")
                     
+                    # Format agent name for display (remove underscores, title case)
+                    agent_display = agent.replace("_", " ").title()
+                    
                     # Build log display
-                    log_html = f'<div class="log-entry"><strong>🔹 {agent.upper()}</strong>'
+                    log_html = f'<div class="log-entry"><strong>🔹 {agent_display}</strong>'
                     
                     # Show method badge if present
                     if method == "hybrid":
