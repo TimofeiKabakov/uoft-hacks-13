@@ -38,11 +38,37 @@ def compliance_node(state: CommunitySparkState) -> Dict[str, Any]:
     impact_summary = state.get("impact_summary", "")
     
     log = state.get("log", [])
-    impact_ran = any(entry.get("agent") == "impact_analyst" for entry in log)
-    decision_path = "auditor->impact->compliance" if impact_ran else "auditor->compliance"
+    decision_path = "auditor->impact->compliance"
     
+    # Community impact matters MORE for struggling businesses
     baseline_score = auditor_score
-    adjusted_score = baseline_score * community_multiplier
+    
+    # Calculate community bonus (how much above 1.0x the multiplier is)
+    community_bonus = (community_multiplier - 1.0) * 100  # Convert to 0-60 scale
+    
+    # Progressive weighting: struggling businesses get more help from community impact
+    if auditor_score < 50:
+        # Struggling: 60% financial + 40% community
+        financial_weight = 0.60
+        community_weight = 0.40
+        weight_label = "high community weight (struggling business)"
+    elif auditor_score < 70:
+        # Moderate: 70% financial + 30% community
+        financial_weight = 0.70
+        community_weight = 0.30
+        weight_label = "moderate community weight (balanced)"
+    else:
+        # Strong: 80% financial + 20% community
+        financial_weight = 0.80
+        community_weight = 0.20
+        weight_label = "standard community weight (strong financials)"
+    
+    # Calculate weighted adjusted score
+    adjusted_score = (auditor_score * financial_weight) + (community_bonus * community_weight)
+    
+    # Also keep the multiplicative score for comparison/logging
+    multiplicative_score = auditor_score * community_multiplier
+    
     policy_floor_checks = []
     
     final_decision: str
@@ -88,7 +114,7 @@ def compliance_node(state: CommunitySparkState) -> Dict[str, Any]:
             })
         
         basic_rationale = f"Application denied due to: {', '.join(reasons)}. "
-        basic_rationale += f"Adjusted score: {adjusted_score:.1f} (auditor: {auditor_score}, multiplier: {community_multiplier}x)."
+        basic_rationale += f"Weighted score: {adjusted_score:.1f} (financial: {auditor_score}, community: {community_multiplier}x, weights: {weight_label})."
         
         llm_rationale = llm_compliance_rationale(
             final_decision="DENY",
@@ -129,9 +155,9 @@ def compliance_node(state: CommunitySparkState) -> Dict[str, Any]:
         final_decision = "APPROVE"
         
         basic_rationale = (
-            f"Application approved. Adjusted score: {adjusted_score:.1f} "
-            f"(auditor: {auditor_score}, community multiplier: {community_multiplier}x). "
-            f"Meets approval threshold of 75."
+            f"Application approved. Weighted score: {adjusted_score:.1f} "
+            f"(financial: {auditor_score}, community: {community_multiplier}x). "
+            f"Scoring used {weight_label}. Meets approval threshold of 75."
         )
         
         llm_rationale = llm_compliance_rationale(
@@ -191,9 +217,9 @@ def compliance_node(state: CommunitySparkState) -> Dict[str, Any]:
         final_decision = "REFER"
         
         basic_rationale = (
-            f"Application requires manual review. Adjusted score: {adjusted_score:.1f} "
-            f"(auditor: {auditor_score}, community multiplier: {community_multiplier}x). "
-            f"Below auto-approval threshold of 75 but meets minimum criteria."
+            f"Application requires manual review. Weighted score: {adjusted_score:.1f} "
+            f"(financial: {auditor_score}, community: {community_multiplier}x). "
+            f"Scoring used {weight_label}. Below auto-approval threshold of 75 but meets minimum criteria."
         )
         
         llm_rationale = llm_compliance_rationale(
@@ -213,7 +239,7 @@ def compliance_node(state: CommunitySparkState) -> Dict[str, Any]:
     
     log.append({
         "agent": "compliance_sentry",
-        "message": f"Compliance decision: {final_decision}. Adjusted score: {adjusted_score:.1f}",
+        "message": f"Compliance decision: {final_decision}. Weighted score: {adjusted_score:.1f} (was {multiplicative_score:.1f} multiplicative). Weights: {weight_label}",
         "reasoning": decision_rationale,
         "decision": final_decision,
         "method": method,
@@ -223,7 +249,13 @@ def compliance_node(state: CommunitySparkState) -> Dict[str, Any]:
     explain = {
         "baseline_score": baseline_score,
         "community_multiplier": community_multiplier,
+        "community_bonus": round(community_bonus, 2),
+        "financial_weight": financial_weight,
+        "community_weight": community_weight,
+        "weight_label": weight_label,
         "adjusted_score": round(adjusted_score, 2),
+        "multiplicative_score": round(multiplicative_score, 2),
+        "scoring_method": "weighted",
         "policy_floor_checks": policy_floor_checks,
         "decision_path": decision_path
     }
