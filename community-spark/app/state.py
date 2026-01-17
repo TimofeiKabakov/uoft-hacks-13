@@ -92,6 +92,15 @@ class CommunitySparkState(TypedDict, total=False):
     None if application is denied.
     """
     
+    # ========== COACH AGENT OUTPUTS ==========
+    improvement_plan: Dict | None
+    """
+    Improvement plan for DENY/REFER decisions.
+    Contains actionable recommendations to improve loan application.
+    Includes specific steps, timelines, and resources.
+    None if application is approved.
+    """
+    
     # ========== WORKFLOW LOG ==========
     log: List[Dict]
     """

@@ -1,140 +1,874 @@
 """
-Community Spark - Streamlit Application
-
-A user-friendly interface for community loan evaluation with WebAuthn passkey support.
+Community Spark - Modern Financial Dashboard
+A user-friendly interface for community loan evaluation with modern UI/UX
 """
 
 import streamlit as st
+import streamlit.components.v1 as components
 import requests
 import json
+import plotly.graph_objects as go
+import plotly.express as px
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, Optional
+import pandas as pd
+import os
 
 # Backend configuration
 BACKEND_URL = "http://localhost:8000"
 
-# Page configuration
+# Page configuration - Modern Financial Dashboard
 st.set_page_config(
-    page_title="Community Spark - Loan Evaluation",
-    page_icon="🏘️",
+    page_title="Community Spark - Loan Advisory Dashboard",
+    page_icon="logo.png",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS
-st.markdown("""
+# Load Custom CSS for Modern Dashboard
+def load_css():
+    st.markdown("""
 <style>
-    .big-decision {
-        font-size: 3em;
-        font-weight: bold;
-        text-align: center;
+        /* Import Modern Font */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        
+        /* Global Styles */
+        * {
+            font-family: 'Inter', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+        
+        /* Hide default Streamlit elements for cleaner look */
+        #MainMenu {visibility: hidden;}
+        footer {visibility: hidden;}
+        header {visibility: hidden;}
+        
+        /* Main container styling */
+        .main {
+            background-color: #f8f9fa;
+            padding: 0 !important;
+            padding-top: 0 !important;
+            margin-top: 0 !important;
+        }
+        
+        /* Fix main content area alignment */
+        .block-container {
+            padding-top: 2rem;
+            padding-left: 2rem;
+            padding-right: 2rem;
+        }
+        
+        /* Remove top padding that causes shift */
+        section[data-testid="stMain"] {
+            padding-top: 0 !important;
+        }
+        
+        /* Sidebar styling - Professional Financial Dashboard */
+        [data-testid="stSidebar"] {
+            background: linear-gradient(180deg, #1a1d29 0%, #2c3142 100%);
+            border-right: none;
+            box-shadow: 4px 0 12px rgba(0, 0, 0, 0.1);
+            padding-top: 0 !important;
+        }
+        
+        [data-testid="stSidebar"] * {
+            color: #ffffff !important;
+        }
+        
+        [data-testid="stSidebar"] .css-1d391kg {
+            padding-top: 0 !important;
+        }
+        
+        /* Sidebar content starts from top */
+        [data-testid="stSidebar"] > div:first-child {
+            padding-top: 0 !important;
+        }
+        
+        /* Sidebar Navigation Items */
+        .sidebar-nav-item {
+            padding: 12px 20px;
+            margin: 8px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            font-weight: 500;
+        }
+        
+        .sidebar-nav-item:hover {
+            background-color: rgba(0, 102, 255, 0.15);
+            transform: translateX(4px);
+        }
+        
+        .sidebar-nav-item.active {
+            background-color: #0066FF;
+            box-shadow: 0 4px 8px rgba(0, 102, 255, 0.3);
+        }
+        
+        /* Logo placeholder */
+        .logo-container {
         padding: 20px;
-        border-radius: 10px;
-        margin: 20px 0;
-    }
-    .approve { background-color: #d4edda; color: #155724; }
-    .deny { background-color: #f8d7da; color: #721c24; }
-    .refer { background-color: #fff3cd; color: #856404; }
-    .log-entry {
-        padding: 10px;
-        margin: 5px 0;
-        border-left: 3px solid #007bff;
+            padding-top: 20px;
+            text-align: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            margin-bottom: 20px;
+            margin-top: 0;
+        }
+        
+        .logo-container img {
+            margin: 0 auto 12px auto;
+            display: block;
+        }
+        
+        .logo-text {
+            font-size: 24px;
+            font-weight: 700;
+            color: #ffffff;
+            letter-spacing: -0.5px;
+            margin-top: 8px;
+        }
+        
+        .logo-subtitle {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.6);
+            margin-top: 4px;
+        }
+        
+        /* Header styling */
+        .dashboard-header {
+            background-color: #ffffff;
+            padding: 20px 30px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+            margin-bottom: 24px;
+            margin-top: 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .welcome-text {
+            font-size: 28px;
+            font-weight: 600;
+            color: #1a1d29;
+            margin: 0;
+        }
+        
+        .welcome-subtitle {
+            font-size: 14px;
+            color: #6c757d;
+            margin-top: 4px;
+        }
+        
+        /* Metric Cards - Premium Design */
+        .metric-card {
+            background-color: #ffffff;
+            padding: 24px;
+            border-radius: 15px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+            border: 1px solid #f0f0f0;
+            margin-bottom: 20px;
+            transition: all 0.3s ease;
+            height: 100%;
+        }
+        
+        .metric-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+        }
+        
+        .metric-card-title {
+            font-size: 14px;
+            color: #6c757d;
+            font-weight: 500;
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .metric-card-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: #1a1d29;
+            margin-bottom: 8px;
+            line-height: 1;
+        }
+        
+        .metric-card-change {
+            font-size: 13px;
+            font-weight: 500;
+            padding: 4px 8px;
+            border-radius: 6px;
+            display: inline-block;
+        }
+        
+        .metric-positive {
+            color: #28a745;
+            background-color: #d4edda;
+        }
+        
+        .metric-negative {
+            color: #dc3545;
+            background-color: #f8d7da;
+        }
+        
+        .metric-neutral {
+            color: #0066FF;
+            background-color: #e7f3ff;
+        }
+        
+        /* Chart Container */
+        .chart-container {
+            background-color: #ffffff;
+            padding: 24px;
+            border-radius: 15px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+            border: 1px solid #f0f0f0;
+            margin-bottom: 20px;
+        }
+        
+        .chart-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1a1d29;
+            margin-bottom: 20px;
+        }
+        
+        /* Activity List */
+        .activity-item {
+            padding: 16px;
+            border-bottom: 1px solid #f0f0f0;
+            display: flex;
+            align-items: center;
+            transition: background-color 0.2s ease;
+        }
+        
+        .activity-item:hover {
         background-color: #f8f9fa;
-        border-radius: 4px;
-    }
-    .metric-box {
-        padding: 15px;
-        background-color: #f0f2f6;
+        }
+        
+        .activity-item:last-child {
+            border-bottom: none;
+        }
+        
+        .activity-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 16px;
+            font-size: 18px;
+        }
+        
+        .activity-icon-blue {
+            background-color: #e7f3ff;
+            color: #0066FF;
+        }
+        
+        .activity-icon-green {
+            background-color: #d4edda;
+            color: #28a745;
+        }
+        
+        .activity-icon-orange {
+            background-color: #fff3cd;
+            color: #ffc107;
+        }
+        
+        .activity-text {
+            flex: 1;
+        }
+        
+        .activity-title {
+            font-size: 14px;
+            font-weight: 500;
+            color: #1a1d29;
+            margin-bottom: 4px;
+        }
+        
+        .activity-time {
+            font-size: 12px;
+            color: #6c757d;
+        }
+        
+        .activity-amount {
+            font-size: 15px;
+            font-weight: 600;
+        }
+        
+        /* Button Styling */
+        .stButton > button {
+            background-color: #0066FF;
+            color: white;
+            border: none;
         border-radius: 8px;
-        margin: 10px 0;
+            padding: 12px 24px;
+            font-weight: 600;
+            font-size: 14px;
+            transition: all 0.3s ease;
+        }
+        
+        .stButton > button:hover {
+            background-color: #0052cc;
+            box-shadow: 0 4px 12px rgba(0, 102, 255, 0.3);
+            transform: translateY(-2px);
+        }
+        
+        /* Form Inputs */
+        .stTextInput > div > div > input,
+        .stSelectbox > div > div > div,
+        .stNumberInput > div > div > input {
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+            padding: 10px 12px;
+            font-size: 14px;
+        }
+        
+        /* Decision Badge */
+        .decision-badge {
+            display: inline-block;
+            padding: 12px 24px;
+            border-radius: 10px;
+            font-size: 20px;
+            font-weight: 700;
+            text-align: center;
+            margin: 20px 0;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .decision-approve {
+            background: linear-gradient(135deg, #28a745, #20c997);
+            color: white;
+            box-shadow: 0 4px 12px rgba(40, 167, 69, 0.3);
+        }
+        
+        .decision-deny {
+            background: linear-gradient(135deg, #dc3545, #c82333);
+            color: white;
+            box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3);
+        }
+        
+        .decision-refer {
+            background: linear-gradient(135deg, #ffc107, #ff9800);
+            color: white;
+            box-shadow: 0 4px 12px rgba(255, 193, 7, 0.3);
+        }
+        
+        /* Table Styling */
+        .dataframe {
+            border: none !important;
+        }
+        
+        .dataframe thead tr th {
+            background-color: #f8f9fa !important;
+            color: #1a1d29 !important;
+            font-weight: 600 !important;
+            border: none !important;
+            padding: 12px !important;
+        }
+        
+        .dataframe tbody tr td {
+            border: none !important;
+            border-bottom: 1px solid #f0f0f0 !important;
+            padding: 12px !important;
+        }
+        
+        /* Search bar */
+        .search-container {
+            position: relative;
+        }
+        
+        .search-icon {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #6c757d;
+        }
+        
+        /* Profile Icon */
+        .profile-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #0066FF, #0052cc);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            font-size: 16px;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(0, 102, 255, 0.3);
+        }
+        
+        /* Responsive spacing */
+        .section-spacing {
+            margin-bottom: 24px;
     }
 </style>
 """, unsafe_allow_html=True)
+
+load_css()
+
+# Add Hamburger Menu Button with working toggle (Floating/Fixed)
+# Position in parent window to stay fixed during scroll
+components.html("""
+<style>
+    #hamburger-btn {
+        display: none !important; /* Hide the iframe button */
+    }
+</style>
+<div id="hamburger-btn" style="display: none;">
+    <div style="width: 24px; height: 3px; background: white; border-radius: 2px;"></div>
+    <div style="width: 24px; height: 3px; background: white; border-radius: 2px;"></div>
+    <div style="width: 24px; height: 3px; background: white; border-radius: 2px;"></div>
+</div>
+
+<script>
+(function() {
+    const hamburger = document.getElementById('hamburger-btn');
+    if (!hamburger) return;
+    
+    // Hide the iframe button
+    hamburger.style.display = 'none';
+    
+    // Create button in parent window to stay fixed
+    function createFixedButton() {
+        try {
+            const parentWindow = window.parent;
+            const parentDoc = parentWindow.document;
+            
+            if (!parentDoc || !parentDoc.body) return;
+            
+            // Remove existing button if any
+            const existing = parentDoc.getElementById('hamburger-btn-parent');
+            if (existing) existing.remove();
+            
+            // Create button in parent
+            const fixedBtn = parentDoc.createElement('div');
+            fixedBtn.id = 'hamburger-btn-parent';
+            fixedBtn.innerHTML = `
+                <div style="width: 24px; height: 3px; background: white; border-radius: 2px; margin-bottom: 4px;"></div>
+                <div style="width: 24px; height: 3px; background: white; border-radius: 2px; margin-bottom: 4px;"></div>
+                <div style="width: 24px; height: 3px; background: white; border-radius: 2px;"></div>
+            `;
+            fixedBtn.style.cssText = `
+                position: fixed !important;
+                top: 20px !important;
+                left: 20px !important;
+                z-index: 999999 !important;
+                cursor: pointer;
+                background: #0066FF;
+                border-radius: 8px;
+                padding: 12px;
+                box-shadow: 0 2px 8px rgba(0, 102, 255, 0.3);
+                transition: all 0.3s ease;
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
+            `;
+            parentDoc.body.appendChild(fixedBtn);
+            
+            // Hover effects
+            fixedBtn.addEventListener('mouseenter', function() {
+                this.style.background = '#0052cc';
+                this.style.transform = 'translateY(-2px)';
+                this.style.boxShadow = '0 4px 12px rgba(0, 102, 255, 0.4)';
+            });
+            
+            fixedBtn.addEventListener('mouseleave', function() {
+                this.style.background = '#0066FF';
+                this.style.transform = 'translateY(0)';
+                this.style.boxShadow = '0 2px 8px rgba(0, 102, 255, 0.3)';
+            });
+            
+            // Click handler - comprehensive sidebar toggle
+            fixedBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                
+                console.log('Hamburger button clicked!');
+                
+                try {
+                    const parentDoc = window.parent.document;
+                    const parentWindow = window.parent;
+                    
+                    // Log current state
+                    const sidebar = parentDoc.querySelector('[data-testid="stSidebar"]');
+                    const collapsedControl = parentDoc.querySelector('[data-testid="collapsedControl"]');
+                    
+                    console.log('Sidebar found:', !!sidebar);
+                    console.log('Collapsed control found:', !!collapsedControl);
+                    if (sidebar) {
+                        console.log('Sidebar visible:', sidebar.offsetParent !== null);
+                        console.log('Sidebar aria-expanded:', sidebar.getAttribute('aria-expanded'));
+                    }
+                    
+                    // Method 1: Try collapsed control first (most reliable)
+                    if (collapsedControl) {
+                        console.log('Trying collapsed control...');
+                        collapsedControl.click();
+                        setTimeout(() => {
+                            if (sidebar && sidebar.offsetParent === null) {
+                                // Sidebar closed, try opening
+                                collapsedControl.click();
+                            }
+                        }, 100);
+                        return;
+                    }
+                    
+                    // Method 2: Try sidebar close button
+                    if (sidebar) {
+                        console.log('Trying sidebar buttons...');
+                        const buttons = sidebar.querySelectorAll('button');
+                        console.log('Found buttons:', buttons.length);
+                        
+                        for (let btn of buttons) {
+                            const kind = btn.getAttribute('kind');
+                            const ariaLabel = btn.getAttribute('aria-label') || '';
+                            console.log('Button kind:', kind, 'aria-label:', ariaLabel);
+                            
+                            if (kind === 'header') {
+                                console.log('Clicking header button');
+                                btn.click();
+                                return;
+                            }
+                        }
+                        
+                        // Try first button
+                        if (buttons.length > 0) {
+                            console.log('Clicking first button');
+                            buttons[0].click();
+                            return;
+                        }
+                    }
+                    
+                    // Method 3: Simulate keyboard shortcut
+                    console.log('Trying keyboard shortcut...');
+                    const keyEvent = new KeyboardEvent('keydown', {
+                        key: '[',
+                        code: 'BracketLeft',
+                        keyCode: 219,
+                        which: 219,
+                        bubbles: true,
+                        cancelable: true,
+                        view: parentWindow
+                    });
+                    
+                    // Try on document
+                    parentDoc.dispatchEvent(keyEvent);
+                    parentDoc.body.dispatchEvent(keyEvent);
+                    
+                    // Try on window
+                    parentWindow.dispatchEvent(keyEvent);
+                    
+                    // Try on all iframes
+                    const iframes = parentDoc.querySelectorAll('iframe');
+                    for (let iframe of iframes) {
+                        try {
+                            if (iframe.contentWindow && iframe.contentDocument) {
+                                iframe.contentWindow.document.dispatchEvent(keyEvent);
+                                iframe.contentWindow.dispatchEvent(keyEvent);
+                            }
+                        } catch (e) {
+                            console.log('Cannot access iframe (cross-origin)');
+                        }
+                    }
+                    
+                } catch (err) {
+                    console.error('Error toggling sidebar:', err);
+                }
+            });
+            
+            return true; // Success
+        } catch (err) {
+            console.error('Error creating fixed button:', err);
+            return false;
+        }
+    }
+    
+    // Initialize immediately
+    if (createFixedButton()) {
+        // Success
+    } else {
+        // Retry after delays
+        setTimeout(createFixedButton, 100);
+        setTimeout(createFixedButton, 500);
+        setTimeout(createFixedButton, 1000);
+    }
+    
+    // Also initialize on load
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', createFixedButton);
+    }
+    
+    // Watch for parent window ready
+    if (window.parent && window.parent.document) {
+        if (window.parent.document.readyState === 'loading') {
+            window.parent.document.addEventListener('DOMContentLoaded', createFixedButton);
+        } else {
+            createFixedButton();
+        }
+    }
+})();
+</script>
+""", height=0)
 
 # Initialize session state
 if 'evaluation_result' not in st.session_state:
     st.session_state.evaluation_result = None
 if 'evaluation_id' not in st.session_state:
     st.session_state.evaluation_id = None
-if 'assertion_token' not in st.session_state:
-    st.session_state.assertion_token = None
+if 'current_page' not in st.session_state:
+    st.session_state.current_page = "Dashboard"
 
-# Title
-st.title("🏘️ Community Spark")
-st.markdown("*Community-focused loan evaluation platform*")
-
-# Create tabs
-tab1, tab2 = st.tabs(["📊 Dashboard", "ℹ️ About"])
-
-with tab1:
-    # Security Transparency Toggle
-    with st.expander("🔐 Security Transparency", expanded=False):
+# Sidebar - Professional Navigation
+with st.sidebar:
+    # Logo Section - starts from top
+    st.markdown("""
+    <div class="logo-container" style="margin-top: 0; padding-top: 20px;">
+    """, unsafe_allow_html=True)
+    
+    # Display logo image
+    st.image("logo.png", width=80)
+    
+    st.markdown("""
+        <div class="logo-text">Community Spark</div>
+        <div class="logo-subtitle">Loan Advisory Platform</div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # Navigation
+    st.markdown("### Navigation")
+    
+    pages = {
+        "Dashboard": "Dashboard",
+        "Coaching": "Coaching",
+        "Invoices": "Invoices",
+        "Analytics": "Analytics",
+        "Settings": "Settings",
+        "About": "About"
+    }
+    
+    for page_label, page_name in pages.items():
+        if st.button(page_label, key=page_name, use_container_width=True):
+            st.session_state.current_page = page_name
+    
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    
+    # Security Section
+    st.markdown("### Security")
+    with st.expander("Authentication", expanded=False):
         st.markdown("""
-        **Security Best Practices:**
-        - Secrets loaded via **1Password `op run`** (no `.env` files)
-        - Passkey authentication using WebAuthn standard
-        - HMAC-signed tokens for session management
+        **WebAuthn Passkeys**
+        - Passwordless authentication
+        - Biometric security
+        - FIDO2 compliant
         """)
-        
-        if st.button("Check Secrets Status"):
-            try:
-                response = requests.get(f"{BACKEND_URL}/secrets-check")
-                if response.ok:
-                    secrets = response.json()
-                    st.success("✅ Backend is reachable")
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        status = "✅" if secrets.get("PLAID_CLIENT_ID") else "❌"
-                        st.metric("PLAID_CLIENT_ID", status)
-                    with col2:
-                        status = "✅" if secrets.get("PLAID_SECRET") else "❌"
-                        st.metric("PLAID_SECRET", status)
-                    with col3:
-                        status = "✅" if secrets.get("OPENAI_API_KEY") else "⚠️ Optional"
-                        st.metric("OPENAI_API_KEY", status)
-                else:
-                    st.error(f"Backend error: {response.status_code}")
-            except Exception as e:
-                st.error(f"Cannot connect to backend: {e}")
+        if st.button("Manage Passkeys"):
+            st.markdown("[Open Passkeys →](http://localhost:8000/passkeys)")
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # Footer
+    st.markdown("---")
+    st.markdown("""
+    <div style='text-align: center; font-size: 11px; color: rgba(255,255,255,0.6);'>
+        Community Spark v0.2.0<br>
+        © 2026 All Rights Reserved
+    </div>
+    """, unsafe_allow_html=True)
 
-    # Main layout
-    col_left, col_right = st.columns([1, 1])
+# Main Content Area
+current_page = st.session_state.current_page
 
-    with col_left:
-        st.header("📝 Business Profile")
+# ==================== DASHBOARD PAGE ====================
+if current_page == "Dashboard":
+    # Header with Welcome Message
+    col_header_left, col_header_right = st.columns([3, 1])
+    
+    with col_header_left:
+        st.markdown("""
+        <div class="dashboard-header" style="margin-right: 10px;">
+            <div>
+                <div class="welcome-text">Welcome, Alex 👋</div>
+                <div class="welcome-subtitle">Here's your loan advisory overview for today</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col_header_right:
+        st.markdown("""
+        <div class="dashboard-header">
+            <div class="profile-icon">AS</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # Metric Cards Row
+    st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.markdown("""
+        <div class="metric-card">
+            <div class="metric-card-title">💰 Total Balance</div>
+            <div class="metric-card-value">$45,320</div>
+            <div class="metric-card-change metric-positive">↑ 12.5% from last month</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        st.markdown("""
+        <div class="metric-card">
+            <div class="metric-card-title">💸 Total Spending</div>
+            <div class="metric-card-value">$12,480</div>
+            <div class="metric-card-change metric-negative">↓ 3.2% from last month</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col3:
+        st.markdown("""
+        <div class="metric-card">
+            <div class="metric-card-title">💎 Total Saved</div>
+            <div class="metric-card-value">$8,940</div>
+            <div class="metric-card-change metric-positive">↑ 8.1% from last month</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col4:
+        st.markdown("""
+        <div class="metric-card">
+            <div class="metric-card-title">📊 Active Loans</div>
+            <div class="metric-card-value">3</div>
+            <div class="metric-card-change metric-neutral">→ No change</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # Main Content Grid
+    st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
+    
+    col_main_left, col_main_right = st.columns([2, 1])
+    
+    with col_main_left:
+        # User Statistics Chart
+        st.markdown("""
+        <div class="chart-container">
+            <div class="chart-title">📈 User Statistics</div>
+        """, unsafe_allow_html=True)
         
-        with st.form("business_profile_form"):
-            business_name = st.text_input("Business Name", value="Local Community Market")
-            
-            business_type = st.selectbox(
-                "Business Type",
-                options=["grocery", "pharmacy", "clinic", "childcare", "retail", "other"],
-                index=0
+        # Create Plotly grouped bar chart
+        months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun']
+        profit = [15000, 18000, 22000, 19000, 25000, 28000]
+        investment = [12000, 14000, 18000, 16000, 20000, 23000]
+        
+        fig = go.Figure(data=[
+            go.Bar(
+                name='Profit',
+                x=months,
+                y=profit,
+                marker=dict(
+                    color='#5DADE2',
+                    line=dict(color='#5DADE2', width=1)
+                ),
+                text=[f'${p/1000:.0f}k' for p in profit],
+                textposition='outside',
+                hovertemplate='<b>%{x}</b><br>Profit: $%{y:,}<extra></extra>'
+            ),
+            go.Bar(
+                name='Investment',
+                x=months,
+                y=investment,
+                marker=dict(
+                    color='#0066FF',
+                    line=dict(color='#0066FF', width=1)
+                ),
+                text=[f'${i/1000:.0f}k' for i in investment],
+                textposition='outside',
+                hovertemplate='<b>%{x}</b><br>Investment: $%{y:,}<extra></extra>'
             )
+        ])
+        
+        fig.update_layout(
+            barmode='group',
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            font=dict(family='Inter, Segoe UI', size=12, color='#1a1d29'),
+            xaxis=dict(
+                showgrid=False,
+                showline=False,
+                zeroline=False
+            ),
+            yaxis=dict(
+                showgrid=True,
+                gridcolor='#f0f0f0',
+                showline=False,
+                zeroline=False,
+                tickformat='$,.0f'
+            ),
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1,
+                bgcolor='rgba(0,0,0,0)',
+                font=dict(size=12)
+            ),
+            margin=dict(l=0, r=0, t=40, b=0),
+            height=320,
+            bargap=0.15,
+            bargroupgap=0.1,
+            hovermode='x unified'
+        )
+        
+        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+        st.markdown("</div>", unsafe_allow_html=True)
+        
+        # Loan Evaluation Section
+        st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
+        
+        st.markdown("""
+        <div class="chart-container">
+            <div class="chart-title">📝 New Loan Evaluation</div>
+        """, unsafe_allow_html=True)
+        
+        with st.form("loan_evaluation_form"):
+            col_form1, col_form2 = st.columns(2)
             
-            zip_code = st.text_input("ZIP Code", value="10451")
+            with col_form1:
+                business_name = st.text_input("Business Name", value="Local Community Market")
+                business_type = st.selectbox(
+                    "Business Type",
+                    options=["grocery", "pharmacy", "clinic", "childcare", "retail", "other"],
+                    index=0
+                )
+                zip_code = st.text_input("ZIP Code", value="10451")
+                
+                latitude = st.text_input("Latitude", value="40.7589", placeholder="40.7589")
+                longitude = st.text_input("Longitude", value="-73.9851", placeholder="-73.9851")
             
-            with st.expander("📍 Optional Location Details"):
-                col1, col2 = st.columns(2)
-                with col1:
-                    latitude = st.text_input("Latitude", value="", placeholder="40.7589")
-                with col2:
-                    longitude = st.text_input("Longitude", value="", placeholder="-73.9851")
-            
-            with st.expander("🏢 Additional Details (Optional)"):
+            with col_form2:
                 hires_locally = st.checkbox("Hires Locally", value=True)
                 nearest_competitor_miles = st.number_input(
-                    "Distance to Nearest Competitor (miles)",
+                    "Nearest Competitor (miles)",
                     min_value=0.0,
                     max_value=100.0,
                     value=8.0,
                     step=0.5
                 )
             
-            submitted = st.form_submit_button("🚀 Run Evaluation", use_container_width=True)
+            submitted = st.form_submit_button("🚀 Evaluate Loan Application", use_container_width=True)
         
         if submitted:
-            # Build business profile
             business_profile = {
                 "name": business_name,
                 "type": business_type,
@@ -143,22 +877,16 @@ with tab1:
                 "nearest_competitor_miles": nearest_competitor_miles
             }
             
-            # Only add lat/lon if they have values
-            if latitude and latitude.strip():
+            # Add latitude and longitude if provided
+            if latitude and longitude:
                 try:
                     business_profile["latitude"] = float(latitude)
-                except ValueError:
-                    st.warning(f"Invalid latitude value: {latitude}")
-            
-            if longitude and longitude.strip():
-                try:
                     business_profile["longitude"] = float(longitude)
                 except ValueError:
-                    st.warning(f"Invalid longitude value: {longitude}")
+                    st.warning("Invalid latitude or longitude format. Please enter valid numbers.")
             
             with st.spinner("🔄 Evaluating loan application..."):
                 try:
-                    # Try /evaluate/plaid first
                     response = requests.post(
                         f"{BACKEND_URL}/evaluate/plaid",
                         json={"business_profile": business_profile},
@@ -170,24 +898,21 @@ with tab1:
                         st.session_state.evaluation_result = result
                         st.session_state.evaluation_id = result.get("evaluation_id")
                         st.success("✅ Evaluation complete!")
+                        st.rerun()
                     else:
                         st.error(f"Evaluation failed: {response.json().get('detail', 'Unknown error')}")
                 
                 except Exception as e:
                     st.error(f"Error connecting to backend: {e}")
 
-    with col_right:
-        st.header("📊 Evaluation Results")
-        
+        # Display Evaluation Results
         if st.session_state.evaluation_result:
             result = st.session_state.evaluation_result
-            
-            # Display decision
             decision = result.get("final_decision", "UNKNOWN")
-            decision_class = decision.lower()
             
+            decision_class = f"decision-{decision.lower()}"
             st.markdown(f"""
-            <div class="big-decision {decision_class}">
+            <div class="decision-badge {decision_class}">
                 {decision}
             </div>
             """, unsafe_allow_html=True)
@@ -195,295 +920,410 @@ with tab1:
             st.markdown(f"**Rationale:** {result.get('decision_rationale', 'N/A')}")
             
             # Scores
-            col1, col2 = st.columns(2)
-            with col1:
+            col_score1, col_score2 = st.columns(2)
+            with col_score1:
                 st.metric("Auditor Score", f"{result.get('auditor_score', 0)}/100")
-            with col2:
+            with col_score2:
                 multiplier = result.get('community_multiplier', 1.0)
                 st.metric("Community Multiplier", f"{multiplier}x")
             
             # Loan Terms
             if result.get("loan_terms"):
-                st.subheader("💰 Loan Terms")
                 terms = result["loan_terms"]
-                col1, col2 = st.columns(2)
-                with col1:
+                st.markdown("### 💰 Loan Terms")
+                col_term1, col_term2 = st.columns(2)
+                with col_term1:
                     st.metric("Loan Amount", f"${terms.get('loan_amount', 0):,}")
                     st.metric("Term", f"{terms.get('term_months', 0)} months")
-                with col2:
+                with col_term2:
                     st.metric("Interest Rate", f"{terms.get('interest_rate', 0)}%")
                     st.metric("Monthly Payment", f"${terms.get('monthly_payment', 0):,}")
             
-            # Explain object
-            if result.get("explain"):
-                with st.expander("🔍 Decision Breakdown", expanded=True):
-                    explain = result["explain"]
-                    
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("Baseline Score", explain.get("baseline_score", 0))
-                    with col2:
-                        st.metric("Multiplier", f"{explain.get('community_multiplier', 1.0)}x")
-                    with col3:
-                        st.metric("Adjusted Score", explain.get("adjusted_score", 0))
-                    
-                    st.markdown(f"**Decision Path:** `{explain.get('decision_path', 'N/A')}`")
-                    
-                    # Policy checks
-                    st.markdown("**Policy Floor Checks:**")
-                    for check in explain.get("policy_floor_checks", []):
-                        status = "✅" if check.get("passed") else "❌"
-                        reason = check.get("reason", "")
-                        st.markdown(f"- {status} **{check.get('check')}**: {check.get('value')} (threshold: {check.get('threshold')}) {reason}")
-            
-            # Signature requirement
-            if result.get("needs_signature"):
-                st.warning("⚠️ This evaluation requires passkey signature to finalize")
+            # Improvement Plan (if DENY/REFER)
+            if result.get("improvement_plan"):
+                st.markdown("---")
+                st.markdown("### 🎯 Improvement Plan")
+                improvement_plan = result.get("improvement_plan")
                 
-                if st.button("🔐 Sign with Passkey"):
-                    st.info("Please use the passkey authentication at /passkeys to sign in and get an assertion token")
-                    st.markdown("[Open Passkeys Page](http://localhost:8000/passkeys)")
-            
-            # Agent Log
-            st.subheader("🤖 Agent Reasoning Log")
-            logs = result.get("log", [])
-            
-            if logs:
-                for log_entry in logs:
-                    agent = log_entry.get("agent", "unknown")
-                    message = log_entry.get("message", "")
-                    reasoning = log_entry.get("reasoning", "")
-                    method = log_entry.get("method", "")
-                    step = log_entry.get("step", "")
+                st.info(improvement_plan.get("summary", ""))
+                
+                st.markdown("**Recommendations:**")
+                for rec in improvement_plan.get("recommendations", []):
+                    priority_color = {
+                        "Critical": "#dc3545",
+                        "High": "#ffc107",
+                        "Medium": "#0066FF",
+                        "Low": "#6c757d"
+                    }.get(rec.get("priority", "Medium"), "#0066FF")
                     
-                    # Build log display
-                    log_html = f'<div class="log-entry"><strong>🔹 {agent.upper()}</strong>'
-                    
-                    # Show method badge if present
-                    if method == "hybrid":
-                        log_html += ' <span style="background: #2196F3; color: white; padding: 2px 8px; border-radius: 3px; font-size: 0.8em; margin-left: 8px;">HYBRID AI</span>'
-                    elif method == "llm":
-                        log_html += ' <span style="background: #4CAF50; color: white; padding: 2px 8px; border-radius: 3px; font-size: 0.8em; margin-left: 8px;">AI-POWERED</span>'
-                    elif method == "rule-based":
-                        log_html += ' <span style="background: #FF9800; color: white; padding: 2px 8px; border-radius: 3px; font-size: 0.8em; margin-left: 8px;">RULE-BASED</span>'
-                    
-                    log_html += f'<br>{message}<br>'
-                    
-                    # Show detailed reasoning if available
-                    if reasoning:
-                        log_html += f'<br><em>Reasoning:</em> {reasoning}<br>'
-                    
-                    log_html += f'<small>Step: {step}</small></div>'
-                    
-                    st.markdown(log_html, unsafe_allow_html=True)
-            else:
-                st.info("No log entries available")
-            
-            # Extracted features (if Plaid was used)
-            if result.get("extracted_features"):
-                with st.expander("📈 Extracted Financial Features"):
-                    features = result["extracted_features"]
-                    st.json(features)
+                    st.markdown(f"""
+                    <div class="metric-card" style="margin-bottom: 12px; padding: 16px;">
+                        <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
+                            <strong style="color: #1a1d29;">{rec.get('issue', 'N/A')}</strong>
+                            <span style="background: {priority_color}; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">
+                                {rec.get('priority', 'Medium')}
+                            </span>
+                        </div>
+                        <p style="color: #6c757d; margin: 8px 0; font-size: 14px;">{rec.get('action', 'N/A')}</p>
+                        <div style="color: #28a745; font-size: 12px; font-weight: 600;">{rec.get('expected_impact', '')}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                if improvement_plan.get("timeline"):
+                    st.markdown(f"**Timeline:** {improvement_plan.get('timeline')}")
+                
+                if improvement_plan.get("resources"):
+                    with st.expander("📚 Resources"):
+                        for resource in improvement_plan.get("resources", []):
+                            st.markdown(f"- **{resource.get('name')}** ({resource.get('type')})")
+                            if resource.get("url"):
+                                st.markdown(f"  [Learn more →]({resource.get('url')})")
         
-        else:
-            st.info("👈 Enter business profile and click 'Run Evaluation' to see results")
-
-    # Sidebar - Passkey Authentication
-    with st.sidebar:
-        st.header("🔐 Passkey Authentication")
+        st.markdown("</div>", unsafe_allow_html=True)
+    
+    with col_main_right:
+        # Recent Activity
         
         st.markdown("""
-        Use WebAuthn passkeys for passwordless authentication.
-        """)
+        <div class="chart-container">
+            <div class="chart-title">🔔 Recent Activity</div>
+        """, unsafe_allow_html=True)
         
-        # Registration
-        with st.expander("Register New Passkey"):
-            user_id = st.text_input("User ID", value="user123", key="reg_user_id")
-            username = st.text_input("Username/Email", value="test@example.com", key="reg_username")
-            display_name = st.text_input("Display Name", value="Test User", key="reg_display_name")
-            
-            st.info("⚠️ Passkey registration requires browser WebAuthn API. Please use the web interface at /passkeys")
-            st.markdown("[Open Passkeys Page](http://localhost:8000/passkeys)")
+        activities = [
+            {"icon": "💰", "color": "green", "title": "Loan Approved", "time": "2 hours ago", "amount": "+$25,000", "amount_color": "#28a745"},
+            {"icon": "📊", "color": "blue", "title": "Application Reviewed", "time": "5 hours ago", "amount": "", "amount_color": "#0066FF"},
+            {"icon": "📝", "color": "orange", "title": "Document Submitted", "time": "1 day ago", "amount": "", "amount_color": "#ffc107"},
+            {"icon": "✅", "color": "green", "title": "Verification Complete", "time": "2 days ago", "amount": "", "amount_color": "#28a745"},
+        ]
         
-        # Authentication
-        with st.expander("Sign In"):
-            auth_user_id = st.text_input("User ID", value="user123", key="auth_user_id")
-            
-            st.info("⚠️ Passkey authentication requires browser WebAuthn API. Please use the web interface at /passkeys")
-            st.markdown("[Open Passkeys Page](http://localhost:8000/passkeys)")
+        for activity in activities:
+            amount_html = f'<div class="activity-amount" style="color: {activity["amount_color"]}">{activity["amount"]}</div>' if activity["amount"] else ""
+            st.markdown(f"""
+            <div class="activity-item">
+                <div class="activity-icon activity-icon-{activity['color']}">{activity['icon']}</div>
+                <div class="activity-text">
+                    <div class="activity-title">{activity['title']}</div>
+                    <div class="activity-time">{activity['time']}</div>
+                </div>
+                {amount_html}
+            </div>
+            """, unsafe_allow_html=True)
         
-        # Finalize with token
-        st.markdown("---")
-        st.subheader("✍️ Finalize Evaluation")
+        st.markdown("</div>", unsafe_allow_html=True)
         
-        if st.session_state.evaluation_id:
-            st.info(f"Evaluation ID: `{st.session_state.evaluation_id[:8]}...`")
-            
-            assertion_token_input = st.text_area(
-                "Assertion Token",
-                value="",
-                placeholder="Paste token from passkey sign-in",
-                height=100
-            )
-            
-            if st.button("Finalize with Signature", use_container_width=True):
-                if not assertion_token_input:
-                    st.error("Please provide an assertion token")
-                else:
-                    try:
-                        response = requests.post(
-                            f"{BACKEND_URL}/finalize",
-                            json={
-                                "evaluation_id": st.session_state.evaluation_id,
-                                "assertion_token": assertion_token_input.strip()
-                            }
-                        )
-                        
-                        if response.ok:
-                            finalize_result = response.json()
-                            st.success("✅ Evaluation finalized and signed!")
-                            st.json(finalize_result)
-                        else:
-                            error_detail = response.json().get("detail", "Unknown error")
-                            st.error(f"Finalization failed: {error_detail}")
-                    
-                    except Exception as e:
-                        st.error(f"Error: {e}")
-        else:
-            st.info("Run an evaluation first to get an evaluation ID")
+        # Saving Overview
+        st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
+        
+        st.markdown("""
+        <div class="chart-container">
+            <div class="chart-title">💎 Saving Overview</div>
+        """, unsafe_allow_html=True)
+        
+        # Create savings data
+        savings_data = pd.DataFrame({
+            "Category": ["Emergency Fund", "Business Growth", "Equipment", "Marketing"],
+            "Amount": ["$3,200", "$2,800", "$1,940", "$1,000"],
+            "Progress": ["80%", "70%", "55%", "25%"]
+        })
+        
+        st.dataframe(
+            savings_data,
+            hide_index=True,
+            use_container_width=True,
+            height=180
+        )
+        
+        st.markdown("</div>", unsafe_allow_html=True)
 
-    # Footer
-    st.markdown("---")
+# ==================== ANALYTICS PAGE ====================
+elif current_page == "Analytics":
     st.markdown("""
-    <div style='text-align: center; color: #666;'>
-        <small>Community Spark v0.1.0 | Built with FastAPI + LangGraph + Streamlit</small>
+    <div class="dashboard-header">
+        <div>
+            <div class="welcome-text">📈 Analytics</div>
+            <div class="welcome-subtitle">Detailed insights and performance metrics</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
+    
+    st.markdown("""
+    <div class="chart-container">
+        <div class="chart-title">Coming Soon</div>
+        <p style="color: #6c757d; padding: 40px; text-align: center;">
+            Advanced analytics dashboard with detailed loan performance metrics,
+            community impact analysis, and trend forecasting.
+        </p>
     </div>
     """, unsafe_allow_html=True)
 
-with tab2:
-    # About tab content
-    st.header("About Community Spark")
+# ==================== COACHING PAGE ====================
+elif current_page == "Coaching":
+    st.markdown("""
+    <div class="dashboard-header">
+        <div>
+            <div class="welcome-text">🎯 Improvement Plans</div>
+            <div class="welcome-subtitle">Personalized recommendations to improve your loan application</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
+    
+    # Display improvement plan from current evaluation if available
+    if st.session_state.evaluation_result and st.session_state.evaluation_result.get("improvement_plan"):
+        improvement_plan = st.session_state.evaluation_result.get("improvement_plan")
+        
+        st.markdown("""
+        <div class="chart-container">
+            <div class="chart-title">Current Improvement Plan</div>
+        """, unsafe_allow_html=True)
+        
+        # Business Info
+        col_info1, col_info2 = st.columns(2)
+        with col_info1:
+            st.metric("Business", improvement_plan.get("business_name", "N/A"))
+            st.metric("Decision", improvement_plan.get("decision", "N/A"))
+        with col_info2:
+            st.metric("Current Score", f"{improvement_plan.get('current_score', 0)}/100")
+            st.metric("Target Score", f"{improvement_plan.get('target_score', 75)}/100")
+        
+        # Summary
+        st.markdown("---")
+        st.markdown("### Summary")
+        st.info(improvement_plan.get("summary", ""))
+        
+        # Recommendations
+        st.markdown("---")
+        st.markdown("### Recommendations")
+        
+        recommendations = improvement_plan.get("recommendations", [])
+        if recommendations:
+            for idx, rec in enumerate(recommendations, 1):
+                priority_color = {
+                    "Critical": "#dc3545",
+                    "High": "#ffc107",
+                    "Medium": "#0066FF",
+                    "Low": "#6c757d"
+                }.get(rec.get("priority", "Medium"), "#0066FF")
+                
+                st.markdown(f"""
+                <div class="metric-card" style="margin-bottom: 16px;">
+                    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px;">
+                        <div>
+                            <span style="background: #0066FF; color: white; padding: 4px 10px; border-radius: 4px; font-size: 12px; font-weight: 600; margin-right: 8px;">
+                                #{idx}
+                            </span>
+                            <strong style="color: #1a1d29; font-size: 16px;">{rec.get('issue', 'N/A')}</strong>
+                        </div>
+                        <span style="background: {priority_color}; color: white; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600;">
+                            {rec.get('priority', 'Medium')} Priority
+                        </span>
+                    </div>
+                    <p style="color: #6c757d; margin: 12px 0; font-size: 14px; line-height: 1.6;">
+                        {rec.get('action', 'N/A')}
+                    </p>
+                    <div style="background: #d4edda; color: #28a745; padding: 8px 12px; border-radius: 6px; font-size: 13px; font-weight: 600; margin-top: 8px; display: inline-block;">
+                        {rec.get('expected_impact', '')}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.info("No specific recommendations available at this time.")
+
+        # Timeline
+        if improvement_plan.get("timeline"):
+            st.markdown("---")
+            st.markdown("### Timeline")
+            st.markdown(f"""
+            <div class="metric-card">
+                <div style="font-size: 18px; font-weight: 600; color: #1a1d29; margin-bottom: 8px;">
+                    Expected Improvement Time
+                </div>
+                <div style="font-size: 24px; font-weight: 700; color: #0066FF;">
+                    {improvement_plan.get('timeline')}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # Resources
+        if improvement_plan.get("resources"):
+            st.markdown("---")
+            st.markdown("### Resources")
+            st.markdown("""
+            <div class="chart-container">
+            """, unsafe_allow_html=True)
+            
+            resources = improvement_plan.get("resources", [])
+            for resource in resources:
+                st.markdown(f"""
+                <div style="padding: 16px; border-bottom: 1px solid #f0f0f0; display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <div style="font-weight: 600; color: #1a1d29; margin-bottom: 4px;">{resource.get('name', 'N/A')}</div>
+                        <div style="font-size: 12px; color: #6c757d;">{resource.get('type', 'N/A')}</div>
+                    </div>
+                    {f'<a href="{resource.get("url")}" target="_blank" style="color: #0066FF; text-decoration: none; font-weight: 600;">View →</a>' if resource.get('url') else ''}
+                </div>
+                """, unsafe_allow_html=True)
+            
+            st.markdown("</div>", unsafe_allow_html=True)
+        
+        st.markdown("</div>", unsafe_allow_html=True)
+    else:
+        # No improvement plan available
+        st.markdown("""
+        <div class="chart-container">
+            <div class="chart-title">No Active Improvement Plan</div>
+            <p style="color: #6c757d; padding: 40px; text-align: center;">
+                Improvement plans are generated for loan applications that receive a <strong>DENY</strong> or <strong>REFER</strong> decision.
+                <br><br>
+                Submit a loan evaluation from the Dashboard to receive personalized recommendations and an improvement plan.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        if st.button("Go to Dashboard", use_container_width=True):
+            st.session_state.current_page = "Dashboard"
+            st.rerun()
+
+# ==================== INVOICES PAGE ====================
+elif current_page == "Invoices":
+    st.markdown("""
+    <div class="dashboard-header">
+        <div>
+            <div class="welcome-text">📋 Invoices</div>
+            <div class="welcome-subtitle">Manage your loan invoices and payment history</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
     
     st.markdown("""
-    ## 🧠 Multi-Agent Mind
+    <div class="chart-container">
+        <div class="chart-title">Invoice Management</div>
+        <p style="color: #6c757d; padding: 40px; text-align: center;">
+            Invoice tracking and payment management features coming soon.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+# ==================== SETTINGS PAGE ====================
+elif current_page == "Settings":
+    st.markdown("""
+    <div class="dashboard-header">
+        <div>
+            <div class="welcome-text">⚙️ Settings</div>
+            <div class="welcome-subtitle">Configure your account and preferences</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
     
-    Community Spark uses a **3-agent LangGraph workflow** to evaluate loan applications
-    with both financial rigor and community impact awareness. Each agent has a specialized role,
-    and they work together through conditional routing to make intelligent decisions.
-    """)
+    st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
     
-    # Display graph visualization
+    col_settings1, col_settings2 = st.columns(2)
+    
+    with col_settings1:
+        st.markdown("""
+        <div class="chart-container">
+            <div class="chart-title">Profile Settings</div>
+        """, unsafe_allow_html=True)
+        
+        st.text_input("Full Name", value="Alex Smith")
+        st.text_input("Email", value="alex.smith@example.com")
+        st.text_input("Phone", value="+1 (555) 123-4567")
+        
+        if st.button("Update Profile"):
+            st.success("Profile updated successfully!")
+        
+        st.markdown("</div>", unsafe_allow_html=True)
+    
+    with col_settings2:
+        st.markdown("""
+        <div class="chart-container">
+            <div class="chart-title">Security Settings</div>
+        """, unsafe_allow_html=True)
+        
+        st.checkbox("Enable two-factor authentication", value=True)
+        st.checkbox("Email notifications", value=True)
+        st.checkbox("SMS alerts for loan updates", value=False)
+        
+        if st.button("Manage Passkeys"):
+            st.info("Opening WebAuthn configuration...")
+        
+        st.markdown("</div>", unsafe_allow_html=True)
+
+# ==================== ABOUT PAGE ====================
+elif current_page == "About":
+    st.markdown("""
+    <div class="dashboard-header">
+        <div>
+            <div class="welcome-text">ℹ️ About Community Spark</div>
+            <div class="welcome-subtitle">Learn about our multi-agent loan evaluation platform</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
+    
+    # Display graph visualization if available
     graph_path = Path(__file__).parent / "artifacts" / "graph.png"
     
     if graph_path.exists():
-        st.subheader("📊 Agent Workflow Diagram")
+        st.markdown("""
+        <div class="chart-container">
+            <div class="chart-title">📊 Agent Workflow Diagram</div>
+        """, unsafe_allow_html=True)
         st.image(str(graph_path), use_container_width=True)
-        st.caption("Visual representation of the agent decision flow")
-    else:
-        st.info("💡 Run `python scripts/render_graph.py` to generate the workflow diagram")
+        st.markdown("</div>", unsafe_allow_html=True)
     
-    st.markdown("---")
+    col_about1, col_about2, col_about3 = st.columns(3)
     
-    st.subheader("🤖 The Three Agents")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
+    with col_about1:
         st.markdown("""
-        ### 🔍 Auditor Agent
-        **Role:** Financial Analysis
-        
-        - Analyzes bank transaction data
-        - Calculates revenue metrics, volatility, NSF counts
-        - Generates baseline financial score (1-100)
-        - Flags potential risk indicators
-        """)
+        <div class="metric-card">
+            <h3 style="color: #0066FF;">🔍 Auditor Agent</h3>
+            <p style="font-size: 14px; color: #6c757d;">
+                Analyzes bank transaction data, calculates revenue metrics,
+                and generates baseline financial scores.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
     
-    with col2:
+    with col_about2:
         st.markdown("""
-        ### 🌱 Impact Analyst
-        **Role:** Community Multiplier
-        
-        - Evaluates community metrics (food deserts, hiring, access)
-        - Calculates community impact multiplier (1.0x - 1.6x)
-        - Only activated when baseline score needs boost
-        - Rewards businesses serving underserved communities
-        """)
+        <div class="metric-card">
+            <h3 style="color: #0066FF;">🌱 Impact Analyst</h3>
+            <p style="font-size: 14px; color: #6c757d;">
+                Evaluates community metrics and calculates impact multipliers
+                for businesses serving underserved areas.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
     
-    with col3:
+    with col_about3:
         st.markdown("""
-        ### 🛡️ Compliance Sentry
-        **Role:** Final Decision & Guardrails
-        
-        - Combines financial score × community multiplier
-        - Applies policy guardrails (minimum thresholds)
-        - Makes final APPROVE / DENY / REFER decision
-        - Generates loan terms and detailed rationale
-        """)
+        <div class="metric-card">
+            <h3 style="color: #0066FF;">🛡️ Compliance Sentry</h3>
+            <p style="font-size: 14px; color: #6c757d;">
+                Applies policy guardrails, makes final decisions,
+                and generates loan terms with detailed rationale.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
     
-    st.markdown("---")
-    
-    st.subheader("🔄 Conditional Routing Logic")
+    st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
     
     st.markdown("""
-    The workflow uses **intelligent conditional routing** based on the auditor's initial assessment:
-    
-    1. **START** → All applications begin with the **Auditor Agent**
-    
-    2. **Conditional Branch:**
-       - **If `auditor_score < 60`** → Route to **Impact Analyst** for community boost
-       - **If `auditor_score >= 60`** → Skip directly to **Compliance Sentry**
-    
-    3. **Impact Analyst** (if activated) → Always routes to **Compliance Sentry**
-    
-    4. **Compliance Sentry** → Makes final decision and generates loan terms
-    
-    5. **END** → Decision returned (APPROVE / DENY / REFER)
-    """)
-    
-    st.info("""
-    💡 **Why conditional routing?** 
-    
-    Applications with strong financials (score ≥ 60) don't need community boost evaluation,
-    saving time and resources. Only applications that need an "impact boost" go through
-    the community analysis step.
-    """)
-    
-    st.markdown("---")
-    
-    st.subheader("✨ Key Features")
-    
-    st.markdown("""
-    ### 🧠 Multi-Agent Mind
-    - **Specialized agents** each with distinct expertise
-    - **Collaborative decision-making** through shared state
-    - **Transparent reasoning** via detailed logs
-    - **Scalable architecture** using LangGraph
-    
-    ### 📈 Impact Boost with Compliance Guardrails
-    - **Community multiplier** (up to 1.6x) rewards businesses serving underserved areas
-    - **Policy guardrails** ensure minimum financial standards are met
-    - **Balanced approach** between financial risk and community impact
-    - **Explainable decisions** with detailed breakdowns
-    """)
-    
-    st.markdown("---")
-    
-    st.subheader("🔐 Security & Transparency")
-    
-    st.markdown("""
-    - **1Password Secret References** - No `.env` files, secrets injected via `op run`
-    - **WebAuthn Passkeys** - Passwordless authentication for loan finalization
-    - **HMAC-signed tokens** - Secure session management
-    - **Audit logs** - Complete reasoning trail for every decision
-    """)
-    
-    st.markdown("---")
-    
-    st.markdown("""
-    <div style='text-align: center; color: #666; padding: 20px;'>
-        <strong>Community Spark v0.1.0</strong><br>
-        Built with FastAPI + LangGraph + Streamlit<br>
-        <small>Empowering community-focused lending through AI</small>
+    <div class="chart-container">
+        <div class="chart-title">✨ Key Features</div>
+        <ul style="font-size: 14px; color: #6c757d; line-height: 1.8;">
+            <li><strong>Multi-Agent Architecture:</strong> Specialized agents with distinct expertise</li>
+            <li><strong>Community Impact Focus:</strong> Rewards businesses serving underserved communities</li>
+            <li><strong>WebAuthn Security:</strong> Passwordless authentication with biometric passkeys</li>
+            <li><strong>Transparent Decisions:</strong> Complete reasoning trail for every evaluation</li>
+            <li><strong>Real-time Analysis:</strong> Instant loan evaluation with Plaid integration</li>
+        </ul>
     </div>
     """, unsafe_allow_html=True)

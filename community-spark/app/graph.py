@@ -2,7 +2,7 @@
 LangGraph Workflow Definition
 
 This module defines the LangGraph workflow that orchestrates the various
-agents (auditor, impact_analyst, compliance_sentry) to process community
+agents (auditor, impact_analyst, compliance_sentry, coach) to process community
 loan applications.
 
 Workflow:
@@ -12,6 +12,9 @@ Workflow:
    - If auditor_score >= 60: Route directly to compliance for faster processing
 3. Impact analyst (if routed) calculates community multiplier
 4. Compliance makes final decision (APPROVE/DENY/REFER)
+5. Conditional routing based on final_decision:
+   - If decision in ["DENY", "REFER"]: Route to coach for improvement plan
+   - Else: End workflow
 """
 
 from typing import Literal
@@ -20,6 +23,7 @@ from app.state import CommunitySparkState
 from app.agents.auditor import auditor_node
 from app.agents.impact_analyst import impact_node
 from app.agents.compliance_sentry import compliance_node
+from app.agents.coach import coach_node
 
 
 def route_after_auditor(state: CommunitySparkState) -> Literal["impact", "compliance"]:
@@ -45,6 +49,29 @@ def route_after_auditor(state: CommunitySparkState) -> Literal["impact", "compli
         return "compliance"
 
 
+def route_after_compliance(state: CommunitySparkState) -> Literal["coach", "__end__"]:
+    """
+    Conditional routing function after compliance node.
+    
+    If decision is DENY or REFER, route to coach for improvement plan.
+    Otherwise, end the workflow.
+    
+    Args:
+        state: Current workflow state containing final_decision
+        
+    Returns:
+        Next node name: "coach" or "__end__"
+    """
+    final_decision = state.get("final_decision", "UNKNOWN")
+    
+    if final_decision in ["DENY", "REFER"]:
+        # Provide improvement plan for denied or referred applications
+        return "coach"
+    else:
+        # Approved - no coaching needed
+        return "__end__"
+
+
 def build_graph():
     """
     Build and compile the LangGraph workflow.
@@ -59,6 +86,7 @@ def build_graph():
     workflow.add_node("auditor", auditor_node)
     workflow.add_node("impact", impact_node)
     workflow.add_node("compliance", compliance_node)
+    workflow.add_node("coach", coach_node)
     
     # Set entry point
     workflow.set_entry_point("auditor")
@@ -76,8 +104,18 @@ def build_graph():
     # Impact always goes to compliance
     workflow.add_edge("impact", "compliance")
     
-    # Compliance is the end node
-    workflow.add_edge("compliance", END)
+    # Add conditional edge from compliance
+    workflow.add_conditional_edges(
+        "compliance",
+        route_after_compliance,
+        {
+            "coach": "coach",
+            "__end__": END
+        }
+    )
+    
+    # Coach goes to end
+    workflow.add_edge("coach", END)
     
     # Compile the graph
     app = workflow.compile()

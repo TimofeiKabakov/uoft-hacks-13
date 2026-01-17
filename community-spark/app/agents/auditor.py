@@ -7,7 +7,7 @@ Falls back to rule-based scoring if OpenAI is unavailable.
 
 from typing import Dict, Any, List
 from app.state import CommunitySparkState
-from app.utils.openai_helper import llm_audit_decision
+from app.utils.gemini_helper import llm_audit_decision
 
 
 def auditor_node(state: CommunitySparkState) -> Dict[str, Any]:

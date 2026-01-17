@@ -23,6 +23,8 @@ graphviz>=0.20.0
 
 # OpenAI (optional - for LLM-enhanced agent reasoning)
 openai>=1.0.0
+# Google Gemini (for LLM-enhanced agent reasoning)
+google-genai>=0.2.0
 
 # Development (optional)
 # pytest>=7.4.0

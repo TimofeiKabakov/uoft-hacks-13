@@ -1,0 +1,379 @@
+/*
+ * Community Spark - Modern Financial Dashboard Stylesheet
+ * Adicap-inspired design with premium aesthetics
+ */
+
+/* ==================== TYPOGRAPHY ==================== */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+* {
+    font-family: 'Inter', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+/* ==================== GLOBAL STYLES ==================== */
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
+header {visibility: hidden;}
+
+.main {
+    background-color: #f8f9fa;
+    padding: 2rem 1rem;
+}
+
+/* ==================== SIDEBAR STYLING ==================== */
+[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #1a1d29 0%, #2c3142 100%);
+    border-right: none;
+    box-shadow: 4px 0 12px rgba(0, 0, 0, 0.1);
+}
+
+[data-testid="stSidebar"] * {
+    color: #ffffff !important;
+}
+
+[data-testid="stSidebar"] .css-1d391kg {
+    padding-top: 2rem;
+}
+
+/* Sidebar Navigation Items */
+.sidebar-nav-item {
+    padding: 12px 20px;
+    margin: 8px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    font-weight: 500;
+}
+
+.sidebar-nav-item:hover {
+    background-color: rgba(0, 102, 255, 0.15);
+    transform: translateX(4px);
+}
+
+.sidebar-nav-item.active {
+    background-color: #0066FF;
+    box-shadow: 0 4px 8px rgba(0, 102, 255, 0.3);
+}
+
+/* Logo Section */
+.logo-container {
+    padding: 20px;
+    text-align: center;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    margin-bottom: 20px;
+}
+
+.logo-text {
+    font-size: 24px;
+    font-weight: 700;
+    color: #ffffff;
+    letter-spacing: -0.5px;
+}
+
+.logo-subtitle {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.6);
+    margin-top: 4px;
+}
+
+/* ==================== HEADER STYLING ==================== */
+.dashboard-header {
+    background-color: #ffffff;
+    padding: 20px 30px;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    margin-bottom: 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.welcome-text {
+    font-size: 28px;
+    font-weight: 600;
+    color: #1a1d29;
+    margin: 0;
+}
+
+.welcome-subtitle {
+    font-size: 14px;
+    color: #6c757d;
+    margin-top: 4px;
+}
+
+/* Profile Icon */
+.profile-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #0066FF, #0052cc);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: 600;
+    font-size: 16px;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0, 102, 255, 0.3);
+}
+
+/* ==================== METRIC CARDS ==================== */
+.metric-card {
+    background-color: #ffffff;
+    padding: 24px;
+    border-radius: 15px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+    border: 1px solid #f0f0f0;
+    margin-bottom: 20px;
+    transition: all 0.3s ease;
+    height: 100%;
+}
+
+.metric-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+}
+
+.metric-card-title {
+    font-size: 14px;
+    color: #6c757d;
+    font-weight: 500;
+    margin-bottom: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.metric-card-value {
+    font-size: 32px;
+    font-weight: 700;
+    color: #1a1d29;
+    margin-bottom: 8px;
+    line-height: 1;
+}
+
+.metric-card-change {
+    font-size: 13px;
+    font-weight: 500;
+    padding: 4px 8px;
+    border-radius: 6px;
+    display: inline-block;
+}
+
+.metric-positive {
+    color: #28a745;
+    background-color: #d4edda;
+}
+
+.metric-negative {
+    color: #dc3545;
+    background-color: #f8d7da;
+}
+
+.metric-neutral {
+    color: #0066FF;
+    background-color: #e7f3ff;
+}
+
+/* ==================== CHART CONTAINER ==================== */
+.chart-container {
+    background-color: #ffffff;
+    padding: 24px;
+    border-radius: 15px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+    border: 1px solid #f0f0f0;
+    margin-bottom: 20px;
+}
+
+.chart-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: #1a1d29;
+    margin-bottom: 20px;
+}
+
+/* ==================== ACTIVITY LIST ==================== */
+.activity-item {
+    padding: 16px;
+    border-bottom: 1px solid #f0f0f0;
+    display: flex;
+    align-items: center;
+    transition: background-color 0.2s ease;
+}
+
+.activity-item:hover {
+    background-color: #f8f9fa;
+}
+
+.activity-item:last-child {
+    border-bottom: none;
+}
+
+.activity-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 16px;
+    font-size: 18px;
+}
+
+.activity-icon-blue {
+    background-color: #e7f3ff;
+    color: #0066FF;
+}
+
+.activity-icon-green {
+    background-color: #d4edda;
+    color: #28a745;
+}
+
+.activity-icon-orange {
+    background-color: #fff3cd;
+    color: #ffc107;
+}
+
+.activity-text {
+    flex: 1;
+}
+
+.activity-title {
+    font-size: 14px;
+    font-weight: 500;
+    color: #1a1d29;
+    margin-bottom: 4px;
+}
+
+.activity-time {
+    font-size: 12px;
+    color: #6c757d;
+}
+
+.activity-amount {
+    font-size: 15px;
+    font-weight: 600;
+}
+
+/* ==================== BUTTON STYLING ==================== */
+.stButton > button {
+    background-color: #0066FF;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 12px 24px;
+    font-weight: 600;
+    font-size: 14px;
+    transition: all 0.3s ease;
+}
+
+.stButton > button:hover {
+    background-color: #0052cc;
+    box-shadow: 0 4px 12px rgba(0, 102, 255, 0.3);
+    transform: translateY(-2px);
+}
+
+/* ==================== FORM INPUTS ==================== */
+.stTextInput > div > div > input,
+.stSelectbox > div > div > div,
+.stNumberInput > div > div > input {
+    border-radius: 8px;
+    border: 1px solid #e0e0e0;
+    padding: 10px 12px;
+    font-size: 14px;
+}
+
+/* ==================== DECISION BADGES ==================== */
+.decision-badge {
+    display: inline-block;
+    padding: 12px 24px;
+    border-radius: 10px;
+    font-size: 20px;
+    font-weight: 700;
+    text-align: center;
+    margin: 20px 0;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.decision-approve {
+    background: linear-gradient(135deg, #28a745, #20c997);
+    color: white;
+    box-shadow: 0 4px 12px rgba(40, 167, 69, 0.3);
+}
+
+.decision-deny {
+    background: linear-gradient(135deg, #dc3545, #c82333);
+    color: white;
+    box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3);
+}
+
+.decision-refer {
+    background: linear-gradient(135deg, #ffc107, #ff9800);
+    color: white;
+    box-shadow: 0 4px 12px rgba(255, 193, 7, 0.3);
+}
+
+/* ==================== TABLE STYLING ==================== */
+.dataframe {
+    border: none !important;
+}
+
+.dataframe thead tr th {
+    background-color: #f8f9fa !important;
+    color: #1a1d29 !important;
+    font-weight: 600 !important;
+    border: none !important;
+    padding: 12px !important;
+}
+
+.dataframe tbody tr td {
+    border: none !important;
+    border-bottom: 1px solid #f0f0f0 !important;
+    padding: 12px !important;
+}
+
+/* ==================== UTILITY CLASSES ==================== */
+.section-spacing {
+    margin-bottom: 24px;
+}
+
+/* ==================== RESPONSIVE DESIGN ==================== */
+@media (max-width: 768px) {
+    .dashboard-header {
+        padding: 16px 20px;
+    }
+    
+    .welcome-text {
+        font-size: 22px;
+    }
+    
+    .metric-card {
+        padding: 16px;
+    }
+    
+    .metric-card-value {
+        font-size: 24px;
+    }
+    
+    .chart-container {
+        padding: 16px;
+    }
+}
+
+/* ==================== COLOR PALETTE ==================== */
+/*
+Primary Blue: #0066FF
+Dark Blue: #0052cc
+Background: #f8f9fa
+White: #ffffff
+Dark Text: #1a1d29
+Gray Text: #6c757d
+Light Gray: #f0f0f0
+Success Green: #28a745
+Danger Red: #dc3545
+Warning Orange: #ffc107
+*/
+

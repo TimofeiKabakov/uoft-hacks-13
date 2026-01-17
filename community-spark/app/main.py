@@ -576,7 +576,8 @@ async def evaluate(request: EvaluateRequest) -> Dict[str, Any]:
         "community_multiplier": final_state.get("community_multiplier"),
         "explain": final_state.get("explain"),
         "log": final_state.get("log", []),
-        "needs_signature": needs_signature
+        "needs_signature": needs_signature,
+        "improvement_plan": final_state.get("improvement_plan")
     }
 
 
@@ -663,7 +664,8 @@ async def evaluate_with_plaid(request: EvaluatePlaidRequest) -> Dict[str, Any]:
         "log": final_state.get("log", []),
         "needs_signature": needs_signature,
         "used_plaid": True,
-        "extracted_features": bank_data  # Include the extracted features for transparency
+        "extracted_features": bank_data,  # Include the extracted features for transparency
+        "improvement_plan": final_state.get("improvement_plan")
     }
 
 
