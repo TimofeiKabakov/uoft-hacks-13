@@ -627,6 +627,14 @@ if 'evaluation_id' not in st.session_state:
     st.session_state.evaluation_id = None
 if 'current_page' not in st.session_state:
     st.session_state.current_page = "Dashboard"
+if 'place_id' not in st.session_state:
+    st.session_state.place_id = None
+if 'place_address' not in st.session_state:
+    st.session_state.place_address = None
+if 'place_lat' not in st.session_state:
+    st.session_state.place_lat = None
+if 'place_lng' not in st.session_state:
+    st.session_state.place_lng = None
 
 # Sidebar - Professional Navigation
 with st.sidebar:
@@ -841,20 +849,355 @@ if current_page == "Dashboard":
             <div class="chart-title">📝 New Loan Evaluation</div>
         """, unsafe_allow_html=True)
         
+        # Google Places Autocomplete Location Picker
+        st.markdown("### 📍 Business Location")
+        
+        # Try to get API key from environment or Streamlit secrets
+        google_maps_key = os.getenv("GOOGLE_MAPS_FRONTEND_KEY", "")
+        
+        # Fallback to Streamlit secrets
+        if not google_maps_key and hasattr(st, 'secrets'):
+            try:
+                google_maps_key = st.secrets.get("GOOGLE_MAPS_FRONTEND_KEY", "")
+            except Exception:
+                pass
+        
+        if google_maps_key:
+            # Google Maps HTML Component with Places Autocomplete and explicit selection button
+            map_html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        body {{ font-family: 'Inter', sans-serif; }}
+        #search-container {{
+            position: relative;
+            margin-bottom: 10px;
+        }}
+        #autocomplete {{
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+            outline: none;
+        }}
+        #autocomplete:focus {{
+            border-color: #0066FF;
+            box-shadow: 0 0 0 3px rgba(0, 102, 255, 0.1);
+        }}
+        #map {{
+            width: 100%;
+            height: 350px;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+        }}
+        #info {{
+            margin-top: 10px;
+            padding: 12px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            font-size: 13px;
+            color: #495057;
+        }}
+        .info-label {{
+            font-weight: 600;
+            color: #1a1d29;
+        }}
+        #selectBtn {{
+            margin-top: 10px;
+            width: 100%;
+            padding: 12px;
+            background: #0066FF;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+        }}
+        #selectBtn:hover {{
+            background: #0052CC;
+        }}
+        #selectBtn:disabled {{
+            background: #ccc;
+            cursor: not-allowed;
+        }}
+        .success {{
+            margin-top: 10px;
+            padding: 12px;
+            background: #d4edda;
+            border-left: 4px solid #28a745;
+            border-radius: 6px;
+            color: #155724;
+            display: none;
+        }}
+    </style>
+</head>
+<body>
+    <div id="search-container">
+        <input id="autocomplete" type="text" placeholder="Search for a business address...">
+    </div>
+    <div id="map"></div>
+    <div id="info">
+        <span class="info-label">Preview:</span>
+        <span id="location-text">Search for an address or click anywhere on the map</span>
+    </div>
+    
+    <button id="selectBtn" disabled>Select a location first</button>
+    
+    <div style="margin-top: 8px; font-size: 12px; color: #6c757d;">
+        💡 Tip: Use the search box or click directly on the map to place a pin
+    </div>
+    
+    <div id="success" class="success"></div>
+    
+    <script src="https://maps.googleapis.com/maps/api/js?key={google_maps_key}&libraries=places&callback=initMap" async defer></script>
+    <script>
+        let map;
+        let marker;
+        let autocomplete;
+        let geocoder;
+        let selectedPlace = null;
+        
+        // Helper function to handle location selection (from autocomplete OR map click)
+        function selectLocation(place) {{
+            selectedPlace = place;
+            
+            // Clear existing marker
+            if (marker) {{
+                marker.setMap(null);
+            }}
+            
+            // Create new marker
+            marker = new google.maps.Marker({{
+                map: map,
+                position: place.geometry.location,
+                animation: google.maps.Animation.DROP,
+                draggable: true  // Allow dragging the marker
+            }});
+            
+            // Allow marker to be dragged
+            marker.addListener('dragend', () => {{
+                const newPos = marker.getPosition();
+                reverseGeocode(newPos.lat(), newPos.lng());
+            }});
+            
+            // Center map on location
+            map.setCenter(place.geometry.location);
+            map.setZoom(15);
+            
+            // Update info display
+            const lat = place.geometry.location.lat();
+            const lng = place.geometry.location.lng();
+            document.getElementById('location-text').textContent = 
+                place.formatted_address + ' (Lat: ' + lat.toFixed(6) + ', Lng: ' + lng.toFixed(6) + ')';
+            
+            // Enable the select button
+            document.getElementById('selectBtn').disabled = false;
+            document.getElementById('selectBtn').textContent = '✓ Use This Location';
+            document.getElementById('success').style.display = 'none';
+        }}
+        
+        // Reverse geocode coordinates to get address
+        function reverseGeocode(lat, lng) {{
+            geocoder.geocode({{ location: {{ lat, lng }} }}, (results, status) => {{
+                if (status === 'OK' && results[0]) {{
+                    const place = {{
+                        place_id: results[0].place_id,
+                        formatted_address: results[0].formatted_address,
+                        geometry: {{
+                            location: {{ lat: () => lat, lng: () => lng }}
+                        }}
+                    }};
+                    selectedPlace = place;
+                    
+                    // Update display
+                    document.getElementById('location-text').textContent = 
+                        results[0].formatted_address + ' (Lat: ' + lat.toFixed(6) + ', Lng: ' + lng.toFixed(6) + ')';
+                    
+                    // Enable button
+                    document.getElementById('selectBtn').disabled = false;
+                    document.getElementById('selectBtn').textContent = '✓ Use This Location';
+                }} else {{
+                    // Even if geocoding fails, allow selection with coordinates
+                    const place = {{
+                        place_id: 'manual_' + Date.now(),
+                        formatted_address: `Coordinates: ${{lat.toFixed(6)}}, ${{lng.toFixed(6)}}`,
+                        geometry: {{
+                            location: {{ lat: () => lat, lng: () => lng }}
+                        }}
+                    }};
+                    selectedPlace = place;
+                    document.getElementById('location-text').textContent = place.formatted_address;
+                    document.getElementById('selectBtn').disabled = false;
+                    document.getElementById('selectBtn').textContent = '✓ Use This Location';
+                }}
+            }});
+        }}
+        
+        function initMap() {{
+            // Default center (New York)
+            const defaultCenter = {{ lat: 40.7128, lng: -74.0060 }};
+            
+            map = new google.maps.Map(document.getElementById('map'), {{
+                center: defaultCenter,
+                zoom: 13,
+                mapTypeControl: true,
+                streetViewControl: false,
+                fullscreenControl: false
+            }});
+            
+            // Initialize geocoder
+            geocoder = new google.maps.Geocoder();
+            
+            // Initialize autocomplete (no type restriction = show all results like Google Maps)
+            autocomplete = new google.maps.places.Autocomplete(
+                document.getElementById('autocomplete'),
+                {{
+                    fields: ['place_id', 'formatted_address', 'geometry', 'name', 'types']
+                }}
+            );
+            
+            // Bias autocomplete to current map viewport
+            map.addListener('bounds_changed', () => {{
+                autocomplete.setBounds(map.getBounds());
+            }});
+            
+            // Listen for place selection from autocomplete
+            autocomplete.addListener('place_changed', () => {{
+                const place = autocomplete.getPlace();
+                
+                if (!place.geometry || !place.geometry.location) {{
+                    document.getElementById('location-text').textContent = 'No details available for: ' + place.name;
+                    document.getElementById('selectBtn').disabled = true;
+                    document.getElementById('selectBtn').textContent = 'Select a location first';
+                    return;
+                }}
+                
+                // Use the shared selection function
+                selectLocation(place);
+            }});
+            
+            // Listen for clicks on the map to place a pin
+            map.addListener('click', (event) => {{
+                const lat = event.latLng.lat();
+                const lng = event.latLng.lng();
+                
+                // Clear existing marker
+                if (marker) {{
+                    marker.setMap(null);
+                }}
+                
+                // Create new marker
+                marker = new google.maps.Marker({{
+                    map: map,
+                    position: event.latLng,
+                    animation: google.maps.Animation.DROP,
+                    draggable: true
+                }});
+                
+                // Allow marker to be dragged
+                marker.addListener('dragend', () => {{
+                    const newPos = marker.getPosition();
+                    reverseGeocode(newPos.lat(), newPos.lng());
+                }});
+                
+                // Reverse geocode the clicked location
+                document.getElementById('location-text').textContent = 'Getting address...';
+                reverseGeocode(lat, lng);
+            }});
+            
+            // Handle "Use This Location" button click
+            document.getElementById('selectBtn').addEventListener('click', () => {{
+                if (!selectedPlace) return;
+                
+                // Get lat/lng (handle both Google Place object and manual object)
+                const lat = typeof selectedPlace.geometry.location.lat === 'function' 
+                    ? selectedPlace.geometry.location.lat() 
+                    : selectedPlace.geometry.location.lat;
+                const lng = typeof selectedPlace.geometry.location.lng === 'function'
+                    ? selectedPlace.geometry.location.lng()
+                    : selectedPlace.geometry.location.lng;
+                
+                // Update parent URL query params
+                try {{
+                    const parentUrl = new URL(window.parent.location.href);
+                    parentUrl.searchParams.set('place_id', selectedPlace.place_id || 'manual');
+                    parentUrl.searchParams.set('address', selectedPlace.formatted_address || 'Manual selection');
+                    parentUrl.searchParams.set('lat', lat);
+                    parentUrl.searchParams.set('lng', lng);
+                    parentUrl.searchParams.set('map_updated', Date.now()); // Trigger change
+                    window.parent.history.replaceState({{}}, '', parentUrl);
+                    
+                    // Force Streamlit to notice the change by reloading
+                    window.parent.location.href = parentUrl.toString();
+                }} catch (e) {{
+                    console.log('Could not update parent URL:', e);
+                    // Fallback: show message to user
+                    document.getElementById('success').style.display = 'block';
+                    document.getElementById('success').textContent = '✓ Location selected! Please click the "Refresh Location" button below the map.';
+                }}
+            }});
+        }}
+    </script>
+</body>
+</html>
+            """
+            
+            components.html(map_html, height=560)
+            
+            # Check for location data in query params
+            query_params = st.query_params
+            if 'place_id' in query_params and 'map_updated' in query_params:
+                try:
+                    place_id = query_params.get('place_id', '')
+                    address = query_params.get('address', '')
+                    lat = float(query_params.get('lat', 0))
+                    lng = float(query_params.get('lng', 0))
+                    
+                    # Update session state
+                    st.session_state.place_id = place_id
+                    st.session_state.place_address = address
+                    st.session_state.place_lat = lat
+                    st.session_state.place_lng = lng
+                    
+                    # Clear the map_updated param to avoid constant reruns
+                    st.query_params.clear()
+                except (ValueError, TypeError) as e:
+                    pass
+            
+            # Display current selection
+            if st.session_state.place_address:
+                st.success(f"✅ **Location Selected:** {st.session_state.place_address}")
+                st.caption(f"📍 Coordinates: Lat {st.session_state.place_lat:.6f}, Lng {st.session_state.place_lng:.6f}")
+            else:
+                st.info("👆 **Two ways to select location:**\n"
+                       "1. Search for an address in the search box above\n"
+                       "2. Click anywhere on the map to place a pin\n\n"
+                       "Then click '✓ Use This Location' button")
+            
+            # Fallback refresh button (in case auto-reload doesn't work)
+            if st.button("🔄 Refresh Location Data", key="refresh_location", help="Click this if the location doesn't update automatically"):
+                st.rerun()
+        else:
+            st.warning("⚠️ Google Maps API key not configured. Set GOOGLE_MAPS_FRONTEND_KEY environment variable.")
+        
+        st.markdown("---")
+        
         with st.form("loan_evaluation_form"):
             col_form1, col_form2 = st.columns(2)
             
             with col_form1:
                 business_name = st.text_input("Business Name", value="Local Community Market")
-                business_type = st.selectbox(
-                    "Business Type",
-                    options=["grocery", "pharmacy", "clinic", "childcare", "retail", "other"],
-                    index=0
-                )
-                zip_code = st.text_input("ZIP Code", value="10451")
-                
-                latitude = st.text_input("Latitude", value="40.7589", placeholder="40.7589")
-                longitude = st.text_input("Longitude", value="-73.9851", placeholder="-73.9851")
+            business_type = st.selectbox(
+                "Business Type",
+                options=["grocery", "pharmacy", "clinic", "childcare", "retail", "other"],
+                index=0
+            )
+            zip_code = st.text_input("ZIP Code", value="10451")
             
             with col_form2:
                 hires_locally = st.checkbox("Hires Locally", value=True)
@@ -869,41 +1212,41 @@ if current_page == "Dashboard":
             submitted = st.form_submit_button("🚀 Evaluate Loan Application", use_container_width=True)
         
         if submitted:
-            business_profile = {
-                "name": business_name,
-                "type": business_type,
-                "zip_code": zip_code,
-                "hires_locally": hires_locally,
-                "nearest_competitor_miles": nearest_competitor_miles
-            }
-            
-            # Add latitude and longitude if provided
-            if latitude and longitude:
-                try:
-                    business_profile["latitude"] = float(latitude)
-                    business_profile["longitude"] = float(longitude)
-                except ValueError:
-                    st.warning("Invalid latitude or longitude format. Please enter valid numbers.")
-            
-            with st.spinner("🔄 Evaluating loan application..."):
-                try:
-                    response = requests.post(
-                        f"{BACKEND_URL}/evaluate/plaid",
-                        json={"business_profile": business_profile},
-                        timeout=30
-                    )
-                    
-                    if response.ok:
-                        result = response.json()
-                        st.session_state.evaluation_result = result
-                        st.session_state.evaluation_id = result.get("evaluation_id")
-                        st.success("✅ Evaluation complete!")
-                        st.rerun()
-                    else:
-                        st.error(f"Evaluation failed: {response.json().get('detail', 'Unknown error')}")
+            # Validate location is selected
+            if not st.session_state.place_lat or not st.session_state.place_lng:
+                st.error("❌ Please select a business location using the map above before submitting.")
+            else:
+                business_profile = {
+                    "name": business_name,
+                    "type": business_type,
+                    "zip_code": zip_code,
+                    "hires_locally": hires_locally,
+                    "nearest_competitor_miles": nearest_competitor_miles,
+                    "latitude": st.session_state.place_lat,
+                    "longitude": st.session_state.place_lng,
+                    "address": st.session_state.place_address,
+                    "place_id": st.session_state.place_id
+                }
                 
-                except Exception as e:
-                    st.error(f"Error connecting to backend: {e}")
+                with st.spinner("🔄 Evaluating loan application..."):
+                    try:
+                        response = requests.post(
+                            f"{BACKEND_URL}/evaluate/plaid",
+                            json={"business_profile": business_profile},
+                            timeout=30
+                        )
+                        
+                        if response.ok:
+                            result = response.json()
+                            st.session_state.evaluation_result = result
+                            st.session_state.evaluation_id = result.get("evaluation_id")
+                            st.success("✅ Evaluation complete!")
+                            st.rerun()
+                        else:
+                            st.error(f"Evaluation failed: {response.json().get('detail', 'Unknown error')}")
+                    
+                    except Exception as e:
+                        st.error(f"Error connecting to backend: {e}")
 
         # Display Evaluation Results
         if st.session_state.evaluation_result:

@@ -7,8 +7,12 @@ and community metrics that indicate positive community contribution.
 """
 
 from typing import Dict, Any
+import logging
 from app.state import CommunitySparkState
 from app.data.community_data import lookup_community_metrics
+from app.maps.google_maps import geocode_address
+
+logger = logging.getLogger(__name__)
 
 
 def impact_node(state: CommunitySparkState) -> Dict[str, Any]:
@@ -21,6 +25,8 @@ def impact_node(state: CommunitySparkState) -> Dict[str, Any]:
     - low_income_area: Boolean indicating if located in low-income area
     - nearest_competitor_miles: Distance to nearest competitor
     - hires_locally: Boolean indicating if business hires from local community
+    - latitude/longitude (optional): Coordinates for location
+    - address (optional): Address to geocode if coordinates not provided
     
     Args:
         state: Current workflow state containing business_profile
@@ -29,6 +35,65 @@ def impact_node(state: CommunitySparkState) -> Dict[str, Any]:
         Dict with updated state containing community_multiplier, impact_summary, and log entry
     """
     business_profile = state.get("business_profile", {})
+    log = state.get("log", [])
+    
+    # Resolve coordinates: prefer user-selected, fallback to geocoding
+    latitude = business_profile.get("latitude") or business_profile.get("lat")
+    longitude = business_profile.get("longitude") or business_profile.get("lng") or business_profile.get("lon")
+    coordinate_source = "unknown"
+    
+    if latitude is not None and longitude is not None:
+        # Coordinates provided by user (from map selection)
+        coordinate_source = "user_selection"
+        try:
+            latitude = float(latitude)
+            longitude = float(longitude)
+            log.append({
+                "agent": "impact_analyst",
+                "message": f"Using user-selected coordinates: ({latitude:.6f}, {longitude:.6f})",
+                "step": "coordinate_resolution"
+            })
+        except (ValueError, TypeError) as e:
+            logger.warning(f"Invalid user-provided coordinates: {e}")
+            latitude = None
+            longitude = None
+    
+    # If no coordinates, try geocoding the address
+    if latitude is None or longitude is None:
+        address = business_profile.get("address")
+        if address:
+            try:
+                coordinate_source = "geocoding"
+                geocode_result = geocode_address(address)
+                latitude = geocode_result["lat"]
+                longitude = geocode_result["lng"]
+                formatted_address = geocode_result["formatted_address"]
+                
+                # Update business_profile with geocoded coordinates
+                business_profile["latitude"] = latitude
+                business_profile["longitude"] = longitude
+                business_profile["formatted_address"] = formatted_address
+                
+                log.append({
+                    "agent": "impact_analyst",
+                    "message": f"Geocoded address '{address}' to coordinates: ({latitude:.6f}, {longitude:.6f})",
+                    "step": "coordinate_resolution"
+                })
+                logger.info(f"Geocoded address: {address} -> ({latitude}, {longitude})")
+            except Exception as e:
+                coordinate_source = "geocoding_failed"
+                logger.warning(f"Failed to geocode address '{address}': {e}")
+                log.append({
+                    "agent": "impact_analyst",
+                    "message": f"Warning: Failed to geocode address '{address}'. Using default community metrics.",
+                    "step": "coordinate_resolution"
+                })
+        else:
+            log.append({
+                "agent": "impact_analyst",
+                "message": "No coordinates or address provided. Using default community metrics based on zip code only.",
+                "step": "coordinate_resolution"
+            })
     
     # Extract profile fields
     business_type = business_profile.get("type", "unknown")
@@ -132,20 +197,18 @@ def impact_node(state: CommunitySparkState) -> Dict[str, Any]:
     
     impact_summary = ". ".join(summary_parts) + "."
     
-    # Get existing log or initialize empty list
-    log = state.get("log", [])
-    
-    # Build log message mentioning community metrics used
+    # Build log message mentioning community metrics used and coordinate source
     metrics_used = ", ".join(applied_metrics) if applied_metrics else "standard metrics"
     log.append({
         "agent": "impact_analyst",
-        "message": f"Completed impact analysis. Community multiplier: {community_multiplier}x. Metrics used: {metrics_used}",
+        "message": f"Completed impact analysis. Community multiplier: {community_multiplier}x. Metrics used: {metrics_used}. Coordinates from: {coordinate_source}",
         "step": "impact_analysis_complete"
     })
     
     return {
         "community_multiplier": community_multiplier,
         "impact_summary": impact_summary,
+        "business_profile": business_profile,  # Include updated profile with geocoded coords if applicable
         "log": log
     }
 

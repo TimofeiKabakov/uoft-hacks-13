@@ -13,7 +13,7 @@ import hmac
 import hashlib
 import time
 import uuid
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from fastapi import FastAPI, HTTPException, Response
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -21,7 +21,9 @@ from app.graph import build_graph
 from app.state import CommunitySparkState
 from app.data.plaid_client import plaid_sandbox_get_transactions
 from app.data.feature_extractor import extract_bank_features
+from app.data.user_profiles import get_user_profile, convert_profile_to_plaid_format
 from app.security.webauthn_routes import router as webauthn_router
+from app.maps.google_maps import geocode_address
 
 # Load environment variables from .env file
 load_dotenv()
@@ -96,12 +98,18 @@ class EvaluateRequest(BaseModel):
 class EvaluatePlaidRequest(BaseModel):
     """Request model for /evaluate/plaid endpoint"""
     business_profile: Dict[str, Any]
+    profile: Optional[str] = None  # Optional: "bad_habit_user" or None for default Plaid sandbox
 
 
 class FinalizeRequest(BaseModel):
     """Request model for /finalize endpoint"""
     evaluation_id: str
     assertion_token: str
+
+
+class GeocodeRequest(BaseModel):
+    """Request model for /geocode endpoint"""
+    address: str
 
 
 @app.get("/")
@@ -135,6 +143,40 @@ async def secrets_check():
         "PLAID_CLIENT_ID": bool(os.getenv("PLAID_CLIENT_ID", "")),
         "PLAID_SECRET": bool(os.getenv("PLAID_SECRET", ""))
     }
+
+
+@app.post("/geocode")
+async def geocode(request: GeocodeRequest) -> Dict[str, Any]:
+    """
+    Geocode an address to get latitude, longitude, and formatted address.
+    
+    Uses Google Geocoding API with GOOGLE_MAPS_BACKEND_KEY environment variable.
+    
+    Args:
+        request: Contains address string to geocode
+        
+    Returns:
+        Dictionary with lat, lng, and formatted_address
+        
+    Raises:
+        400: If address is invalid or not found
+        500: If geocoding service fails or API key is not configured
+    """
+    try:
+        result = geocode_address(request.address)
+        return result
+    except ValueError as e:
+        # Client error (bad address, no results, etc.)
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        # Server error (API key missing, network error, etc.)
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        # Unexpected error
+        raise HTTPException(
+            status_code=500,
+            detail=f"Unexpected error during geocoding: {str(e)}"
+        )
 
 
 @app.get("/passkeys")
@@ -602,12 +644,22 @@ async def evaluate_with_plaid(request: EvaluatePlaidRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=400, detail="business_profile is required")
     
     try:
-        # Step 1: Fetch transactions from Plaid sandbox
-        # Uses environment variables: PLAID_CLIENT_ID, PLAID_SECRET
-        plaid_data = await plaid_sandbox_get_transactions(
-            start_date="2023-01-01",
-            end_date="2024-01-01"
-        )
+        # Step 1: Get transaction data (either from user profile or Plaid sandbox)
+        if request.profile:
+            # Use predefined user profile
+            profile_data = get_user_profile(request.profile)
+            if not profile_data:
+                raise HTTPException(status_code=400, detail=f"Profile '{request.profile}' not found")
+            
+            # Convert profile to Plaid format
+            plaid_data = convert_profile_to_plaid_format(profile_data)
+        else:
+            # Fetch transactions from Plaid sandbox (default)
+            # Uses environment variables: PLAID_CLIENT_ID, PLAID_SECRET
+            plaid_data = await plaid_sandbox_get_transactions(
+                start_date="2023-01-01",
+                end_date="2024-01-01"
+            )
         
         # Step 2: Extract bank features from Plaid transaction data
         bank_data = extract_bank_features(plaid_data)
