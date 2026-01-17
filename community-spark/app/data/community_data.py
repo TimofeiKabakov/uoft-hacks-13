@@ -1,14 +1,8 @@
 """
-Community Data Lookup Module - Canada Only
+Community Data Lookup Module
 
-Provides lookup functionality for community metrics for Canadian locations.
-
-API-First Approach:
-1. Statistics Canada API (real-time, free)
-2. Static postal code data (fallback only)
-3. Default values (last resort)
-
-Note: Static JSON data is now used only as a fallback if live API fails.
+Provides lookup functionality for community metrics based on zip code
+or geographic coordinates.
 """
 
 import json
@@ -17,6 +11,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 
 
+# Load community metrics data
 def _load_community_metrics() -> Dict[str, Any]:
     """
     Load community metrics from JSON file.
@@ -35,16 +30,8 @@ def _load_community_metrics() -> Dict[str, Any]:
         return json.load(f)
 
 
+# Cache the loaded data
 _COMMUNITY_METRICS = _load_community_metrics()
-
-try:
-    from app.utils.statcan_api import get_community_metrics_from_statcan
-    STATCAN_API_AVAILABLE = True
-except ImportError:
-    STATCAN_API_AVAILABLE = False
-    print("[INFO] StatCan API module not available - using static data only")
-
-_statcan_cache: Dict[str, Dict[str, Any]] = {}
 
 
 def _create_lat_lon_bucket(lat: float, lon: float, precision: int = 1) -> str:
@@ -67,16 +54,14 @@ def _create_lat_lon_bucket(lat: float, lon: float, precision: int = 1) -> str:
 
 def lookup_community_metrics(profile: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Lookup community metrics for a Canadian business profile.
+    Lookup community metrics for a business profile.
     
-    Priority:
-    1. Statistics Canada API (real-time, for Canadian coordinates)
-    2. Static postal code data (fallback if API fails)
-    3. Default values (last resort)
+    Uses zip_code if available, otherwise falls back to lat/lon bucket.
+    Returns default values if no match is found.
     
     Args:
         profile: Business profile dict containing:
-            - zip_code or postal_code (str, optional): Canadian postal code
+            - zip_code (str, optional): Zip code
             - latitude (float, optional): Business latitude
             - longitude (float, optional): Business longitude
     
@@ -87,58 +72,29 @@ def lookup_community_metrics(profile: Dict[str, Any]) -> Dict[str, Any]:
             "food_desert": bool,
             "local_hiring_rate": float,
             "nearest_grocery_miles": float,
-            "nearest_pharmacy_miles": float,
-            "source": str  # "statcan_estimated", "static_postal_fallback", "default"
+            "nearest_pharmacy_miles": float
         }
     """
+    # Default values if no match found
     default_metrics = {
         "low_income_area": False,
         "food_desert": False,
         "local_hiring_rate": 0.5,
         "nearest_grocery_miles": 1.0,
-        "nearest_pharmacy_miles": 0.8,
-        "source": "default"
+        "nearest_pharmacy_miles": 0.8
     }
     
-    postal_code = profile.get("zip_code") or profile.get("zip") or profile.get("postal_code")
+    # Try zip code first
+    zip_code = profile.get("zip_code") or profile.get("zip")
+    if zip_code:
+        # Convert to string and try lookup
+        zip_str = str(zip_code).strip()
+        if zip_str in _COMMUNITY_METRICS:
+            return _COMMUNITY_METRICS[zip_str]
+    
+    # Fallback to lat/lon bucket
     lat = profile.get("latitude") or profile.get("lat")
     lon = profile.get("longitude") or profile.get("lon") or profile.get("lng")
-    
-    if lat is not None and lon is not None and STATCAN_API_AVAILABLE:
-        try:
-            lat_float = float(lat)
-            lon_float = float(lon)
-            
-            cache_key = f"{round(lat_float, 2)},{round(lon_float, 2)}"
-            
-            if cache_key in _statcan_cache:
-                print(f"[INFO] Using cached StatCan data for {cache_key}")
-                return _statcan_cache[cache_key]
-            
-            print(f"[INFO] Fetching Statistics Canada data for ({lat_float}, {lon_float})...")
-            api_metrics = get_community_metrics_from_statcan(lat_float, lon_float)
-            
-            if api_metrics:
-                result = default_metrics.copy()
-                result.update(api_metrics)
-                
-                _statcan_cache[cache_key] = result
-                
-                print(f"[INFO] StatCan API success: Low-income={result['low_income_area']}, Median income=${result.get('median_income', 'N/A')} CAD")
-                return result
-            else:
-                print(f"[WARNING] StatCan API failed for ({lat_float}, {lon_float})")
-                
-        except (ValueError, TypeError) as e:
-            print(f"[WARNING] Invalid lat/lon values: {e}")
-    
-    if postal_code:
-        postal_str = str(postal_code).strip()
-        if postal_str in _COMMUNITY_METRICS:
-            result = _COMMUNITY_METRICS[postal_str].copy()
-            result["source"] = "static_postal_fallback"
-            print(f"[INFO] Using static postal code fallback for {postal_str}")
-            return result
     
     if lat is not None and lon is not None:
         try:
@@ -146,14 +102,14 @@ def lookup_community_metrics(profile: Dict[str, Any]) -> Dict[str, Any]:
             lon_float = float(lon)
             bucket_key = _create_lat_lon_bucket(lat_float, lon_float)
             
+            # Try to find matching bucket (may need to check nearby buckets)
+            # For now, return default if exact match not found
+            # In production, you'd implement nearest-neighbor lookup
             if bucket_key in _COMMUNITY_METRICS:
-                result = _COMMUNITY_METRICS[bucket_key].copy()
-                result["source"] = "static_bucket_fallback"
-                print(f"[INFO] Using static bucket fallback for {bucket_key}")
-                return result
+                return _COMMUNITY_METRICS[bucket_key]
         except (ValueError, TypeError):
             pass
     
-    print(f"[INFO] No community data found, using defaults")
+    # No match found, return defaults
     return default_metrics
 
