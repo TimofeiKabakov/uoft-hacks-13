@@ -11,6 +11,7 @@ import { GradientOrbs } from '@/components/layout/GradientOrbs';
 import { StepIndicator } from '@/components/wizard/StepIndicator';
 import { BusinessProfileStep } from '@/components/wizard/BusinessProfileStep';
 import { LocationStep } from '@/components/wizard/LocationStep';
+import { LoanAmountStep } from '@/components/wizard/LoanAmountStep';
 import { BankDataStep } from '@/components/wizard/BankDataStep';
 import { RunEvaluationStep } from '@/components/wizard/RunEvaluationStep';
 import { ResultsPanel } from '@/components/results/ResultsPanel';
@@ -23,9 +24,10 @@ import { useState } from 'react';
 const steps = [
   { id: 0, title: 'Business Profile', description: 'Tell us about your business' },
   { id: 1, title: 'Location', description: 'Verify your location' },
-  { id: 2, title: 'Bank Data', description: 'Connect financial data' },
-  { id: 3, title: 'Evaluation', description: 'Run AI analysis' },
-  { id: 4, title: 'Results', description: 'View your results' },
+  { id: 2, title: 'Loan Amount', description: 'Specify loan amount' },
+  { id: 3, title: 'Bank Data', description: 'Connect financial data' },
+  { id: 4, title: 'Evaluation', description: 'Run AI analysis' },
+  { id: 5, title: 'Results', description: 'View your results' },
 ];
 
 export default function Evaluation() {
@@ -35,6 +37,7 @@ export default function Evaluation() {
     nextStep,
     prevStep,
     setBusinessProfile,
+    setLoanAmount,
     setBankDataMode,
     setSelectedScenario,
     startEvaluation,
@@ -57,6 +60,13 @@ export default function Evaluation() {
 
   const handleLocationSubmit = async (location: LocationDetails) => {
     setBusinessProfile({ ...state.businessProfile, selectedLocation: location });
+    setError(null);
+    // Move to loan amount step
+    nextStep();
+  };
+
+  const handleLoanAmountSubmit = async (amount: number) => {
+    setLoanAmount(amount);
 
     // If we already have an applicationId, just move to next step
     if (state.applicationId) {
@@ -64,9 +74,11 @@ export default function Evaluation() {
       return;
     }
 
+    const location = state.businessProfile.selectedLocation;
+
     // Ensure we have coordinates before creating the application
-    if (!location.coordinates?.lat || !location.coordinates?.lng) {
-      setError('Please select a location with valid coordinates.');
+    if (!location?.coordinates?.lat || !location?.coordinates?.lng) {
+      setError('Missing location data. Please go back and select a location.');
       return;
     }
 
@@ -75,12 +87,8 @@ export default function Evaluation() {
     setError(null);
 
     try {
-      const profile = { ...state.businessProfile, selectedLocation: location };
+      const profile = state.businessProfile;
       const safeAge = Math.min(Math.max(profile.yearsInOperation || 30, 18), 100);
-      const loanAmount =
-        profile.annualRevenue && profile.annualRevenue > 0
-          ? Math.max(profile.annualRevenue * 0.1, 1000)
-          : 10000;
 
       const response = await api.createApplication({
         job: profile.businessName || profile.businessType || 'Business Owner',
@@ -90,7 +98,7 @@ export default function Evaluation() {
           lng: location.coordinates.lng,
           address: location.formattedAddress || location.city || 'Unknown address',
         },
-        loan_amount: loanAmount,
+        loan_amount: amount,
         loan_purpose: profile.businessType
           ? `Working capital for ${profile.businessType}`
           : 'Working capital',
@@ -176,6 +184,24 @@ export default function Evaluation() {
             exit="exit"
             custom={1}
           >
+            <LoanAmountStep
+              initialAmount={state.loanAmount}
+              onSubmit={handleLoanAmountSubmit}
+              onBack={prevStep}
+            />
+          </motion.div>
+        );
+
+      case 3:
+        return (
+          <motion.div
+            key="step-3"
+            variants={wizardStepVariants}
+            initial="enter"
+            animate="center"
+            exit="exit"
+            custom={1}
+          >
             <BankDataStep
               applicationId={state.applicationId}
               onNext={nextStep}
@@ -184,11 +210,11 @@ export default function Evaluation() {
           </motion.div>
         );
 
-      case 3:
       case 4:
+      case 5:
         return (
           <motion.div
-            key="step-3"
+            key="step-4"
             variants={wizardStepVariants}
             initial="enter"
             animate="center"
@@ -208,7 +234,7 @@ export default function Evaluation() {
               onAddLog={addLog}
               onComplete={(result) => {
                 setResult(result);
-                setStep(4);
+                setStep(5);
               }}
               onBack={prevStep}
             />

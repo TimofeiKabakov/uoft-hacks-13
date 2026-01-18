@@ -16,6 +16,7 @@ import type {
 export interface EvaluationState {
   step: number;
   businessProfile: Partial<BusinessProfile>;
+  loanAmount: number;
   bankDataMode: BankDataMode;
   selectedScenario: SandboxScenario | null;
   selectedAccounts: string[];
@@ -30,6 +31,7 @@ export interface EvaluationState {
 const initialState: EvaluationState = {
   step: 0,
   businessProfile: {},
+  loanAmount: 10000,
   bankDataMode: 'sandbox',
   selectedScenario: null,
   selectedAccounts: [],
@@ -49,7 +51,7 @@ export function useEvaluationState() {
   }, []);
 
   const nextStep = useCallback(() => {
-    setState(prev => ({ ...prev, step: Math.min(prev.step + 1, 4) }));
+    setState(prev => ({ ...prev, step: Math.min(prev.step + 1, 5) }));
   }, []);
 
   const prevStep = useCallback(() => {
@@ -57,10 +59,14 @@ export function useEvaluationState() {
   }, []);
 
   const setBusinessProfile = useCallback((profile: Partial<BusinessProfile>) => {
-    setState(prev => ({ 
-      ...prev, 
-      businessProfile: { ...prev.businessProfile, ...profile } 
+    setState(prev => ({
+      ...prev,
+      businessProfile: { ...prev.businessProfile, ...profile }
     }));
+  }, []);
+
+  const setLoanAmount = useCallback((amount: number) => {
+    setState(prev => ({ ...prev, loanAmount: amount }));
   }, []);
 
   const setBankDataMode = useCallback((mode: BankDataMode) => {
@@ -120,6 +126,7 @@ export function useEvaluationState() {
     nextStep,
     prevStep,
     setBusinessProfile,
+    setLoanAmount,
     setBankDataMode,
     setSelectedScenario,
     setSelectedAccounts,

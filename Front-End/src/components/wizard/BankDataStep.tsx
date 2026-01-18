@@ -5,7 +5,7 @@
  * Uses Plaid Sandbox API for demo banking data with various scenarios.
  */
 
-import { useState } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowRight,
@@ -19,6 +19,7 @@ import {
   CheckCircle2,
   Loader2
 } from 'lucide-react';
+import { usePlaidLink } from 'react-plaid-link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -63,6 +64,58 @@ export function BankDataStep({ applicationId, onNext, onBack }: BankDataStepProp
   const [showPassword, setShowPassword] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [linkToken, setLinkToken] = useState<string | null>(null);
+
+  // Fetch link token when component mounts
+  useEffect(() => {
+    if (applicationId && !linkToken) {
+      console.log('Fetching link token for application:', applicationId);
+      fetch(`http://localhost:8000/api/v1/applications/${applicationId}/plaid-link-token`, {
+        method: 'POST',
+      })
+        .then(res => {
+          console.log('Link token response status:', res.status);
+          return res.json();
+        })
+        .then(data => {
+          console.log('Link token received:', data.link_token?.substring(0, 20) + '...');
+          setLinkToken(data.link_token);
+        })
+        .catch(err => console.error('Failed to get link token:', err));
+    }
+  }, [applicationId, linkToken]);
+
+  // Handle successful Plaid Link flow
+  const onSuccess = useCallback(async (public_token: string) => {
+    if (!applicationId) return;
+
+    setIsConnecting(true);
+    setState('connecting');
+
+    try {
+      const response = await api.connectPlaid(applicationId, public_token);
+
+      if (response.success) {
+        setState('success');
+        setIsConnecting(false);
+        setTimeout(() => onNext(), 1500);
+      } else {
+        throw new Error(response.error?.message || 'Failed to connect bank');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An unexpected error occurred');
+      setState('credentials');
+      setIsConnecting(false);
+    }
+  }, [applicationId, onNext]);
+
+  // Initialize Plaid Link
+  const config = {
+    token: linkToken || '',
+    onSuccess,
+  };
+
+  const { open, ready } = usePlaidLink(config);
 
   const filteredBanks = SANDBOX_INSTITUTIONS.filter(bank =>
     bank.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -85,34 +138,36 @@ export function BankDataStep({ applicationId, onNext, onBack }: BankDataStepProp
     setState('connecting');
     setError(null);
 
+    // For sandbox mode, we'll use Plaid's sandbox test credentials
+    // In a real app, this would open Plaid Link modal
+    // For sandbox: user_good/pass_good creates a successful connection
+
     try {
-      // In a real implementation, we would:
-      // 1. Initialize Plaid Link with a link_token from backend
-      // 2. User completes Plaid flow and we get a public_token
-      // 3. Send public_token to backend to exchange for access_token
+      // Simulate Plaid sandbox flow by calling a sandbox endpoint
+      // that generates test data based on the username
+      const response = await fetch(`http://localhost:8000/api/v1/applications/${applicationId}/plaid-sandbox`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username,
+          password,
+          institution_id: selectedBank?.id || 'ins_109508'
+        })
+      });
 
-      // For now, simulate the flow with mock public_token
-      const mockPublicToken = `public-sandbox-${Date.now()}-${selectedBank?.id}`;
+      const data = await response.json();
 
-      // Call backend to connect Plaid
-      const response = await api.connectPlaid(applicationId, mockPublicToken);
-
-      if (response.success) {
+      if (response.ok && data.success) {
         setState('success');
         setIsConnecting(false);
-
-        // Auto-proceed after success animation
-        setTimeout(() => {
-          onNext();
-        }, 1500);
+        setTimeout(() => onNext(), 1500);
       } else {
-        throw new Error(response.error?.message || 'Failed to connect bank');
+        throw new Error(data.error || 'Failed to connect bank');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An unexpected error occurred');
       setState('credentials');
       setIsConnecting(false);
-      console.error('Error connecting Plaid:', err);
     }
   };
 

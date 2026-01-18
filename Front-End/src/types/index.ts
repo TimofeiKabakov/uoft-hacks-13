@@ -141,7 +141,7 @@ export interface ImprovementPlan {
 
 export interface EvaluationResponse {
   id: string;
-  decision: 'APPROVE' | 'DENY' | 'REFER';
+  decision: 'APPROVE' | 'DENY' | 'REFER' | 'REVIEW';
   
   // Scores (can be 0-100 or 0-1000 scale)
   fiscalHealthScore: number;

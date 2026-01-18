@@ -120,13 +120,64 @@ export function RunEvaluationStep({
       const recsResponse = await api.getRecommendationsList(applicationId);
       const recommendations = recsResponse.success ? recsResponse.data : [];
 
+      // Calculate fiscal health score (0-1000 scale)
+      const metrics = assessmentResponse.data.financial_metrics;
+      const assessment = assessmentResponse.data.assessment;
+
+      // Base score starts at 500
+      let fiscalScore = 500;
+
+      // Positive factors
+      if (metrics) {
+        // Good debt-to-income (below 0.3)
+        if (metrics.debt_to_income_ratio && metrics.debt_to_income_ratio < 0.3) {
+          fiscalScore += 200;
+        } else if (metrics.debt_to_income_ratio && metrics.debt_to_income_ratio > 1.0) {
+          // Bad debt-to-income (above 1.0) - penalize heavily
+          fiscalScore -= 300;
+        }
+
+        // Savings rate bonus
+        if (metrics.savings_rate && metrics.savings_rate > 20) {
+          fiscalScore += 100;
+        }
+
+        // Income stability bonus
+        if (metrics.income_stability_score && metrics.income_stability_score > 90) {
+          fiscalScore += 100;
+        }
+
+        // Overdraft penalty - major red flag
+        if (metrics.overdraft_count && metrics.overdraft_count > 0) {
+          fiscalScore -= metrics.overdraft_count * 50; // -50 per overdraft
+        }
+
+        // Low balance penalty
+        if (metrics.min_balance_6mo !== undefined && metrics.min_balance_6mo <= 0) {
+          fiscalScore -= 100;
+        }
+      }
+
+      // Ensure score stays in 0-1000 range
+      fiscalScore = Math.max(0, Math.min(1000, fiscalScore));
+
+      // Map eligibility to decision
+      let decision: 'APPROVE' | 'REVIEW' | 'DENY' = 'REVIEW';
+      if (assessment?.eligibility === 'approved') {
+        decision = 'APPROVE';
+      } else if (assessment?.eligibility === 'rejected') {
+        decision = 'DENY';
+      } else {
+        decision = 'REVIEW';
+      }
+
       // Map backend response to frontend EvaluationResponse format
       const result: EvaluationResponse = {
         id: applicationId,
-        decision: 'APPROVE', // TODO: Get from assessment
-        fiscalHealthScore: Math.round((assessmentResponse.data.financial_metrics?.income_stability_score || 0) * 100),
-        communityMultiplier: 1.0, // TODO: Get from assessment
-        finalScore: Math.round((assessmentResponse.data.financial_metrics?.income_stability_score || 0) * 100),
+        decision: decision,
+        fiscalHealthScore: fiscalScore,
+        communityMultiplier: 1.0, // TODO: Calculate from market data
+        finalScore: Math.round(fiscalScore * 1.0), // Apply community multiplier
         loanTerms: {
           amount: 0, // TODO: Get from assessment
           apr: 0,
@@ -136,13 +187,43 @@ export function RunEvaluationStep({
         },
         logs: logs,
         accountSummaries: [],
-        riskFlags: [],
+        riskFlags: [
+          // Add risk flags based on metrics
+          ...(metrics?.overdraft_count && metrics.overdraft_count > 0 ? [{
+            id: 'overdraft-risk',
+            title: 'Frequent Overdrafts',
+            description: `${metrics.overdraft_count} overdraft incidents in the past 6 months indicate poor cash flow management.`,
+            severity: metrics.overdraft_count > 5 ? 'critical' as const : 'high' as const,
+            recommendation: 'Set up low balance alerts and maintain a cash buffer to avoid overdrafts.'
+          }] : []),
+          ...(metrics?.debt_to_income_ratio && metrics.debt_to_income_ratio > 1.0 ? [{
+            id: 'debt-ratio-risk',
+            title: 'High Debt-to-Income Ratio',
+            description: `Debt-to-income ratio of ${metrics.debt_to_income_ratio.toFixed(2)} indicates spending exceeds income.`,
+            severity: 'high' as const,
+            recommendation: 'Focus on reducing expenses and increasing revenue to improve cash flow.'
+          }] : []),
+          ...(metrics?.min_balance_6mo !== undefined && metrics.min_balance_6mo <= 0 ? [{
+            id: 'low-balance-risk',
+            title: 'Minimum Balance at Zero',
+            description: 'Account balance has reached zero in the past 6 months.',
+            severity: 'medium' as const,
+            recommendation: 'Build an emergency fund to cover at least one month of expenses.'
+          }] : []),
+          ...(assessment?.risk_level === 'high' ? [{
+            id: 'overall-risk',
+            title: 'High Risk Assessment',
+            description: assessment.reasoning || 'Overall risk assessment indicates significant concerns.',
+            severity: 'high' as const,
+            recommendation: 'Review and address all flagged issues before reapplying.'
+          }] : []),
+        ],
         improvementPlan: {
           priorityActions: recommendations.slice(0, 3).map(rec => ({
             id: rec.id,
             title: rec.title,
             description: rec.recommended_action,
-            priority: rec.priority,
+            priority: rec.priority.toLowerCase() as 'low' | 'medium' | 'high',
             estimatedImpact: rec.expected_impact,
             timeframe: '3-6 months',
           })),

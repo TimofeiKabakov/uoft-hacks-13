@@ -149,14 +149,47 @@ export async function fetchHeaderStats(applicationId: string): Promise<HeaderSta
 
     const data = await response.json();
 
-    // Calculate stats from assessment data
-    const incomeStability = Number(data?.financial_metrics?.income_stability_score || 0);
-    const fiscalHealthScore = Math.round(incomeStability * 10);
+    // Calculate fiscal health score using same logic as RunEvaluationStep
+    const metrics = data?.financial_metrics;
+    let fiscalScore = 500;
 
-    const cashFlowStability = data?.financial_metrics?.savings_rate || 0;
+    if (metrics) {
+      // Good debt-to-income (below 0.3)
+      if (metrics.debt_to_income_ratio && metrics.debt_to_income_ratio < 0.3) {
+        fiscalScore += 200;
+      } else if (metrics.debt_to_income_ratio && metrics.debt_to_income_ratio > 1.0) {
+        // Bad debt-to-income (above 1.0) - penalize heavily
+        fiscalScore -= 300;
+      }
+
+      // Savings rate bonus
+      if (metrics.savings_rate && metrics.savings_rate > 20) {
+        fiscalScore += 100;
+      }
+
+      // Income stability bonus
+      if (metrics.income_stability_score && metrics.income_stability_score > 90) {
+        fiscalScore += 100;
+      }
+
+      // Overdraft penalty - major red flag
+      if (metrics.overdraft_count && metrics.overdraft_count > 0) {
+        fiscalScore -= metrics.overdraft_count * 50; // -50 per overdraft
+      }
+
+      // Low balance penalty
+      if (metrics.min_balance_6mo !== undefined && metrics.min_balance_6mo <= 0) {
+        fiscalScore -= 100;
+      }
+    }
+
+    // Ensure score stays in 0-1000 range
+    fiscalScore = Math.max(0, Math.min(1000, fiscalScore));
+
+    const cashFlowStability = metrics?.savings_rate || 0;
 
     return {
-      fiscalHealthScore,
+      fiscalHealthScore: fiscalScore,
       communityImpactMultiplier: 1.0, // TODO: Add to backend response
       cashFlowStability,
       riskFlagsCount: 0, // TODO: Calculate from recommendations

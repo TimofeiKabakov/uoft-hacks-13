@@ -35,6 +35,15 @@ const decisionConfig = {
     iconClass: 'text-destructive',
     badgeClass: 'bg-destructive text-destructive-foreground',
   },
+  REVIEW: {
+    icon: AlertCircle,
+    title: 'Under Review',
+    subtitle: 'The application requires additional review. Please address the flagged concerns and consider reapplying.',
+    bgClass: 'bg-gradient-to-br from-warning/20 to-warning/5',
+    borderClass: 'border-warning/30',
+    iconClass: 'text-warning',
+    badgeClass: 'bg-warning text-warning-foreground',
+  },
   REFER: {
     icon: AlertCircle,
     title: 'Under Review',
