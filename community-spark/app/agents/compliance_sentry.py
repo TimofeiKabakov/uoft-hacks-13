@@ -1,12 +1,15 @@
 """
-Compliance Sentry Agent
+Compliance Sentry Agent (Hybrid-Explanation)
 
 This agent makes the final loan decision by combining audit scores
 with community multipliers and applying risk guardrails.
+
+Decision logic is deterministic (rule-based), but rationale is LLM-enhanced.
 """
 
 from typing import Dict, Any
 from app.state import CommunitySparkState
+from app.utils.openai_helper import llm_compliance_rationale
 
 
 def compliance_node(state: CommunitySparkState) -> Dict[str, Any]:
@@ -27,34 +30,52 @@ def compliance_node(state: CommunitySparkState) -> Dict[str, Any]:
     Returns:
         Dict with updated state containing final_decision, decision_rationale, loan_terms, and log entry
     """
-    # Get scores from state
     auditor_score = state.get("auditor_score", 0)
     community_multiplier = state.get("community_multiplier", 1.0)
     bank_data = state.get("bank_data", {})
     nsf_count = bank_data.get("nsf_count", 0)
+    auditor_summary = state.get("auditor_summary", "")
+    impact_summary = state.get("impact_summary", "")
     
-    # Determine decision path by checking if impact node ran
-    # If community_multiplier is exactly 1.0 and wasn't explicitly set, impact node likely didn't run
-    # Check log to see if impact_analyst ran
     log = state.get("log", [])
-    impact_ran = any(entry.get("agent") == "impact_analyst" for entry in log)
-    decision_path = "auditor->impact->compliance" if impact_ran else "auditor->compliance"
+    decision_path = "auditor->impact->compliance"
     
-    # Baseline score is the auditor_score
+    # Community impact matters MORE for struggling businesses
     baseline_score = auditor_score
     
-    # Calculate adjusted score
-    adjusted_score = baseline_score * community_multiplier
+    # Calculate community bonus (how much above 1.0x the multiplier is)
+    community_bonus = (community_multiplier - 1.0) * 100  # Convert to 0-60 scale
     
-    # Track policy floor checks
+    # Progressive weighting: struggling businesses get more help from community impact
+    if auditor_score < 50:
+        # Struggling: 60% financial + 40% community
+        financial_weight = 0.60
+        community_weight = 0.40
+        weight_label = "high community weight (struggling business)"
+    elif auditor_score < 70:
+        # Moderate: 70% financial + 30% community
+        financial_weight = 0.70
+        community_weight = 0.30
+        weight_label = "moderate community weight (balanced)"
+    else:
+        # Strong: 80% financial + 20% community
+        financial_weight = 0.80
+        community_weight = 0.20
+        weight_label = "standard community weight (strong financials)"
+    
+    # Calculate weighted adjusted score
+    adjusted_score = (auditor_score * financial_weight) + (community_bonus * community_weight)
+    
+    # Also keep the multiplicative score for comparison/logging
+    multiplicative_score = auditor_score * community_multiplier
+    
     policy_floor_checks = []
     
-    # Apply guardrails to determine final_decision
     final_decision: str
     decision_rationale: str
     loan_terms: Dict | None = None
+    llm_rationale = None
     
-    # Guardrail 1: Hard denial conditions
     if auditor_score < 40 or nsf_count >= 2:
         final_decision = "DENY"
         reasons = []
@@ -92,44 +113,36 @@ def compliance_node(state: CommunitySparkState) -> Dict[str, Any]:
                 "passed": True
             })
         
-        decision_rationale = f"Application denied due to: {', '.join(reasons)}. "
-        decision_rationale += f"Adjusted score: {adjusted_score:.1f} (auditor: {auditor_score}, multiplier: {community_multiplier}x)."
+        basic_rationale = f"Application denied due to: {', '.join(reasons)}. "
+        basic_rationale += f"Weighted score: {adjusted_score:.1f} (financial: {auditor_score}, community: {community_multiplier}x, weights: {weight_label})."
+        
+        llm_rationale = llm_compliance_rationale(
+            final_decision="DENY",
+            auditor_score=auditor_score,
+            community_multiplier=community_multiplier,
+            adjusted_score=adjusted_score,
+            policy_checks=policy_floor_checks,
+            auditor_summary=auditor_summary,
+            impact_summary=impact_summary
+        )
+        
+        decision_rationale = llm_rationale if llm_rationale else basic_rationale
         loan_terms = None
     
-    # Guardrail 2: Auto-approval for high adjusted scores
     elif adjusted_score >= 75:
-        # Check policy floors first
-        if auditor_score < 40:
-            policy_floor_checks.append({
-                "check": "auditor_score_floor",
-                "threshold": 40,
-                "value": auditor_score,
-                "passed": False,
-                "reason": f"Score {auditor_score} below minimum threshold of 40"
-            })
-        else:
-            policy_floor_checks.append({
-                "check": "auditor_score_floor",
-                "threshold": 40,
-                "value": auditor_score,
-                "passed": True
-            })
+        policy_floor_checks.append({
+            "check": "auditor_score_floor",
+            "threshold": 40,
+            "value": auditor_score,
+            "passed": True
+        })
         
-        if nsf_count >= 2:
-            policy_floor_checks.append({
-                "check": "nsf_count_limit",
-                "threshold": 2,
-                "value": nsf_count,
-                "passed": False,
-                "reason": f"NSF count {nsf_count} exceeds maximum allowed (2)"
-            })
-        else:
-            policy_floor_checks.append({
-                "check": "nsf_count_limit",
-                "threshold": 2,
-                "value": nsf_count,
-                "passed": True
-            })
+        policy_floor_checks.append({
+            "check": "nsf_count_limit",
+            "threshold": 2,
+            "value": nsf_count,
+            "passed": True
+        })
         
         policy_floor_checks.append({
             "check": "adjusted_score_threshold",
@@ -140,14 +153,25 @@ def compliance_node(state: CommunitySparkState) -> Dict[str, Any]:
         })
         
         final_decision = "APPROVE"
-        decision_rationale = (
-            f"Application approved. Adjusted score: {adjusted_score:.1f} "
-            f"(auditor: {auditor_score}, community multiplier: {community_multiplier}x). "
-            f"Meets approval threshold of 75."
+        
+        basic_rationale = (
+            f"Application approved. Weighted score: {adjusted_score:.1f} "
+            f"(financial: {auditor_score}, community: {community_multiplier}x). "
+            f"Scoring used {weight_label}. Meets approval threshold of 75."
         )
         
-        # Generate loan terms based on score
-        # Higher scores get better terms
+        llm_rationale = llm_compliance_rationale(
+            final_decision="APPROVE",
+            auditor_score=auditor_score,
+            community_multiplier=community_multiplier,
+            adjusted_score=adjusted_score,
+            policy_checks=policy_floor_checks,
+            auditor_summary=auditor_summary,
+            impact_summary=impact_summary
+        )
+        
+        decision_rationale = llm_rationale if llm_rationale else basic_rationale
+        
         if adjusted_score >= 90:
             interest_rate = 6.5
             loan_amount_mult = 1.2
@@ -158,7 +182,6 @@ def compliance_node(state: CommunitySparkState) -> Dict[str, Any]:
             interest_rate = 7.5
             loan_amount_mult = 1.0
         
-        # Estimate loan amount based on revenue (if available)
         avg_monthly_revenue = bank_data.get("avg_monthly_revenue", 0)
         base_loan_amount = max(10000, min(100000, avg_monthly_revenue * 3 * loan_amount_mult)) if avg_monthly_revenue > 0 else 50000
         
@@ -168,41 +191,20 @@ def compliance_node(state: CommunitySparkState) -> Dict[str, Any]:
             "term_months": 36,
             "monthly_payment": int((base_loan_amount * (interest_rate / 100 / 12) * (1 + (interest_rate / 100 / 12)) ** 36) / (((1 + (interest_rate / 100 / 12)) ** 36) - 1))
         }
-    
-    # Guardrail 3: Refer for manual review
     else:
-        # Check policy floors
-        if auditor_score < 40:
-            policy_floor_checks.append({
-                "check": "auditor_score_floor",
-                "threshold": 40,
-                "value": auditor_score,
-                "passed": False,
-                "reason": f"Score {auditor_score} below minimum threshold of 40"
-            })
-        else:
-            policy_floor_checks.append({
-                "check": "auditor_score_floor",
-                "threshold": 40,
-                "value": auditor_score,
-                "passed": True
-            })
+        policy_floor_checks.append({
+            "check": "auditor_score_floor",
+            "threshold": 40,
+            "value": auditor_score,
+            "passed": True
+        })
         
-        if nsf_count >= 2:
-            policy_floor_checks.append({
-                "check": "nsf_count_limit",
-                "threshold": 2,
-                "value": nsf_count,
-                "passed": False,
-                "reason": f"NSF count {nsf_count} exceeds maximum allowed (2)"
-            })
-        else:
-            policy_floor_checks.append({
-                "check": "nsf_count_limit",
-                "threshold": 2,
-                "value": nsf_count,
-                "passed": True
-            })
+        policy_floor_checks.append({
+            "check": "nsf_count_limit",
+            "threshold": 2,
+            "value": nsf_count,
+            "passed": True
+        })
         
         policy_floor_checks.append({
             "check": "adjusted_score_threshold",
@@ -213,25 +215,47 @@ def compliance_node(state: CommunitySparkState) -> Dict[str, Any]:
         })
         
         final_decision = "REFER"
-        decision_rationale = (
-            f"Application requires manual review. Adjusted score: {adjusted_score:.1f} "
-            f"(auditor: {auditor_score}, community multiplier: {community_multiplier}x). "
-            f"Below auto-approval threshold of 75 but meets minimum criteria."
+        
+        basic_rationale = (
+            f"Application requires manual review. Weighted score: {adjusted_score:.1f} "
+            f"(financial: {auditor_score}, community: {community_multiplier}x). "
+            f"Scoring used {weight_label}. Below auto-approval threshold of 75 but meets minimum criteria."
         )
+        
+        llm_rationale = llm_compliance_rationale(
+            final_decision="REFER",
+            auditor_score=auditor_score,
+            community_multiplier=community_multiplier,
+            adjusted_score=adjusted_score,
+            policy_checks=policy_floor_checks,
+            auditor_summary=auditor_summary,
+            impact_summary=impact_summary
+        )
+        
+        decision_rationale = llm_rationale if llm_rationale else basic_rationale
         loan_terms = None
     
-    # Append log entry
+    method = "hybrid-explanation" if llm_rationale else "rule-based"
+    
     log.append({
         "agent": "compliance_sentry",
-        "message": f"Final decision: {final_decision}. Adjusted score: {adjusted_score:.1f}",
+        "message": f"Compliance decision: {final_decision}. Weighted score: {adjusted_score:.1f} (was {multiplicative_score:.1f} multiplicative). Weights: {weight_label}",
+        "reasoning": decision_rationale,
+        "decision": final_decision,
+        "method": method,
         "step": "compliance_check_complete"
     })
     
-    # Build explain object
     explain = {
         "baseline_score": baseline_score,
         "community_multiplier": community_multiplier,
+        "community_bonus": round(community_bonus, 2),
+        "financial_weight": financial_weight,
+        "community_weight": community_weight,
+        "weight_label": weight_label,
         "adjusted_score": round(adjusted_score, 2),
+        "multiplicative_score": round(multiplicative_score, 2),
+        "scoring_method": "weighted",
         "policy_floor_checks": policy_floor_checks,
         "decision_path": decision_path
     }
