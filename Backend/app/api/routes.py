@@ -24,7 +24,7 @@ from app.models.schemas import (
 )
 from app.core.security import encrypt_token, decrypt_token
 from app.services.plaid_service import PlaidService
-from app.agents.graph import create_assessment_graph, AgentState
+from app.agents.orchestrator import Orchestrator
 from sqlalchemy import select
 
 router = APIRouter()
@@ -120,7 +120,7 @@ async def connect_plaid(
 
 async def process_assessment(application_id: str, db: AsyncSession):
     """
-    Process loan assessment using multi-agent system
+    Process loan assessment using multi-agent orchestrator
 
     This would typically be run as a background task
     """
@@ -136,8 +136,9 @@ async def process_assessment(application_id: str, db: AsyncSession):
     # Decrypt access token
     access_token = decrypt_token(application.plaid_access_token)
 
-    # Create initial state
-    initial_state = AgentState(
+    # Create orchestrator and run assessment
+    orchestrator = Orchestrator()
+    results = await orchestrator.run_assessment(
         application_id=application_id,
         access_token=access_token,
         user_job=application.user_job,
@@ -145,16 +146,13 @@ async def process_assessment(application_id: str, db: AsyncSession):
         location_lat=application.location_lat,
         location_lng=application.location_lng,
         loan_amount=application.loan_amount,
-        loan_purpose=application.loan_purpose,
-        financial_metrics={},
-        market_analysis={},
-        final_assessment=None,
-        messages=[]
+        loan_purpose=application.loan_purpose
     )
 
-    # Run agent graph
-    graph = create_assessment_graph()
-    final_state = graph.invoke(initial_state)
+    # Extract results from orchestrator
+    financial_metrics = results['financial_metrics']
+    market_analysis = results['market_analysis']
+    final_assessment = results['final_assessment']
 
     # Save results to database
     # Save financial metrics
@@ -162,8 +160,15 @@ async def process_assessment(application_id: str, db: AsyncSession):
     db_financial = models.FinancialMetrics(
         id=financial_id,
         application_id=application_id,
-        **final_state['financial_metrics'],
-        raw_plaid_data=json.dumps(final_state['financial_metrics'])
+        monthly_income=financial_metrics.get('monthly_income', 0.0),
+        monthly_expenses=financial_metrics.get('monthly_expenses', 0.0),
+        debt_to_income_ratio=financial_metrics.get('debt_to_income_ratio', 0.0),
+        savings_rate=financial_metrics.get('savings_rate', 0.0),
+        avg_monthly_balance=financial_metrics.get('avg_monthly_balance', 0.0),
+        min_balance_6mo=financial_metrics.get('min_balance_6mo', 0.0),
+        overdraft_count=financial_metrics.get('overdraft_count', 0),
+        income_stability_score=financial_metrics.get('income_stability_score', 0.0),
+        raw_plaid_data=json.dumps(financial_metrics)
     )
     db.add(db_financial)
 
@@ -172,25 +177,24 @@ async def process_assessment(application_id: str, db: AsyncSession):
     db_market = models.MarketAnalysis(
         id=market_id,
         application_id=application_id,
-        competitor_count=final_state['market_analysis']['competitor_count'],
-        market_density=final_state['market_analysis']['market_density'],
-        viability_score=final_state['market_analysis']['viability_score'],
-        market_insights=final_state['market_analysis']['market_insights'],
-        nearby_businesses=json.dumps(final_state['market_analysis']['nearby_businesses'])
+        competitor_count=market_analysis.get('competitor_count', 0),
+        market_density=market_analysis.get('market_density', 'unknown'),
+        viability_score=market_analysis.get('viability_score', 50.0),
+        market_insights=market_analysis.get('market_insights', ''),
+        nearby_businesses=json.dumps(market_analysis.get('nearby_businesses', []))
     )
     db.add(db_market)
 
     # Save assessment
     assessment_id = str(uuid.uuid4())
-    final_assessment = final_state['final_assessment']
     db_assessment = models.Assessment(
         id=assessment_id,
         application_id=application_id,
-        eligibility=final_assessment['eligibility'],
-        confidence_score=final_assessment['confidence_score'],
-        risk_level=final_assessment['risk_level'],
-        reasoning=final_assessment['reasoning'],
-        recommendations=json.dumps(final_assessment['recommendations'])
+        eligibility=final_assessment.get('eligibility', 'review'),
+        confidence_score=final_assessment.get('confidence_score', 0.0),
+        risk_level=final_assessment.get('risk_level', 'medium'),
+        reasoning=final_assessment.get('reasoning', ''),
+        recommendations=json.dumps(final_assessment.get('recommendations', []))
     )
     db.add(db_assessment)
 
