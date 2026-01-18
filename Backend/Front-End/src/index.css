@@ -1,0 +1,291 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Community Spark Design System
+   Color Palette:
+   - Base: Warm beige (#F5F0E8)
+   - Primary: Teal (#3EBEC9) - buttons, CTAs
+   - Accent: Deep plum (#5E2750) - highlights, badges
+   - Dark mode: Warm charcoal beige
+*/
+
+@layer base {
+  :root {
+    /* Warm Beige Base */
+    --background: 40 33% 94%; /* #F5F0E8 */
+    --foreground: 0 0% 9%; /* Near black for text */
+
+    /* Cards with slight warmth */
+    --card: 40 30% 97%;
+    --card-foreground: 0 0% 9%;
+
+    /* Popover */
+    --popover: 40 30% 97%;
+    --popover-foreground: 0 0% 9%;
+
+    /* Primary - Teal #3EBEC9 */
+    --primary: 184 55% 52%;
+    --primary-foreground: 0 0% 100%;
+
+    /* Secondary - Lighter teal */
+    --secondary: 184 40% 90%;
+    --secondary-foreground: 184 55% 30%;
+
+    /* Muted - Soft beige */
+    --muted: 40 20% 90%;
+    --muted-foreground: 40 10% 40%;
+
+    /* Accent - Deep plum #5E2750 */
+    --accent: 312 42% 26%;
+    --accent-foreground: 0 0% 100%;
+
+    /* Destructive */
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* Success */
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+
+    /* Warning */
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 9%;
+
+    /* Borders and inputs */
+    --border: 40 20% 85%;
+    --input: 40 20% 88%;
+    --ring: 184 55% 52%;
+
+    --radius: 0.75rem;
+
+    /* Glass effect */
+    --glass: 40 30% 97% / 0.7;
+    --glass-border: 40 20% 80% / 0.5;
+
+    /* Sidebar */
+    --sidebar-background: 40 25% 96%;
+    --sidebar-foreground: 0 0% 15%;
+    --sidebar-primary: 184 55% 52%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 312 42% 26%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 40 20% 88%;
+    --sidebar-ring: 184 55% 52%;
+
+    /* Chart colors */
+    --chart-1: 184 55% 52%; /* Teal */
+    --chart-2: 312 42% 26%; /* Plum */
+    --chart-3: 142 71% 45%; /* Green */
+    --chart-4: 38 92% 50%;  /* Amber */
+    --chart-5: 0 84% 60%;   /* Red */
+  }
+
+  .dark {
+    /* Warm Dark Beige */
+    --background: 30 15% 12%;
+    --foreground: 40 20% 92%;
+
+    /* Cards */
+    --card: 30 12% 16%;
+    --card-foreground: 40 20% 92%;
+
+    /* Popover */
+    --popover: 30 12% 14%;
+    --popover-foreground: 40 20% 92%;
+
+    /* Primary - Teal stays vibrant */
+    --primary: 184 55% 52%;
+    --primary-foreground: 0 0% 9%;
+
+    /* Secondary */
+    --secondary: 184 30% 20%;
+    --secondary-foreground: 184 55% 70%;
+
+    /* Muted */
+    --muted: 30 10% 22%;
+    --muted-foreground: 40 15% 60%;
+
+    /* Accent - Plum */
+    --accent: 312 42% 35%;
+    --accent-foreground: 0 0% 100%;
+
+    /* Destructive */
+    --destructive: 0 62% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* Success */
+    --success: 142 60% 40%;
+    --success-foreground: 0 0% 100%;
+
+    /* Warning */
+    --warning: 38 80% 45%;
+    --warning-foreground: 0 0% 9%;
+
+    /* Borders and inputs */
+    --border: 30 10% 25%;
+    --input: 30 10% 22%;
+    --ring: 184 55% 52%;
+
+    /* Glass effect - darker */
+    --glass: 30 12% 18% / 0.8;
+    --glass-border: 30 10% 30% / 0.5;
+
+    /* Sidebar */
+    --sidebar-background: 30 12% 10%;
+    --sidebar-foreground: 40 20% 90%;
+    --sidebar-primary: 184 55% 52%;
+    --sidebar-primary-foreground: 0 0% 9%;
+    --sidebar-accent: 312 42% 35%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 30 10% 20%;
+    --sidebar-ring: 184 55% 52%;
+
+    /* Chart colors - slightly adjusted for dark */
+    --chart-1: 184 55% 55%;
+    --chart-2: 312 42% 45%;
+    --chart-3: 142 60% 50%;
+    --chart-4: 38 80% 55%;
+    --chart-5: 0 70% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  /* Smooth scrolling */
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+@layer components {
+  /* Glassmorphism card */
+  .glass-card {
+    @apply bg-card/70 backdrop-blur-xl border border-border/50 shadow-lg;
+  }
+
+  /* Premium button glow */
+  .btn-glow {
+    @apply relative overflow-hidden;
+  }
+  
+  .btn-glow::before {
+    content: '';
+    @apply absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full;
+    animation: shimmer 2s infinite;
+  }
+
+  /* Gradient text */
+  .gradient-text {
+    @apply bg-gradient-to-r from-primary via-accent to-primary bg-clip-text text-transparent;
+    background-size: 200% auto;
+  }
+
+  /* Floating animation */
+  .float {
+    animation: float 6s ease-in-out infinite;
+  }
+
+  /* Pulse glow */
+  .pulse-glow {
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
+
+  /* Skeleton shimmer */
+  .skeleton-shimmer {
+    @apply relative overflow-hidden bg-muted;
+  }
+
+  .skeleton-shimmer::after {
+    content: '';
+    @apply absolute inset-0 -translate-x-full;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      hsl(var(--primary) / 0.1),
+      transparent
+    );
+    animation: shimmer 1.5s infinite;
+  }
+}
+
+@layer utilities {
+  /* Hide scrollbar but keep functionality */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Custom scrollbar */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--primary) / 0.3) transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    @apply bg-primary/30 rounded-full;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    @apply bg-primary/50;
+  }
+}
+
+/* Keyframe animations */
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-20px);
+  }
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 20px hsl(var(--primary) / 0.3);
+  }
+  50% {
+    box-shadow: 0 0 40px hsl(var(--primary) / 0.6);
+  }
+}
+
+/* React Flow custom styles */
+.react-flow__node {
+  @apply transition-all duration-300;
+}
+
+.react-flow__edge-path {
+  @apply stroke-primary;
+}
+
+.react-flow__background {
+  @apply bg-background;
+}
