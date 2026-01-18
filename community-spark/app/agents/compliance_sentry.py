@@ -9,7 +9,7 @@ Decision logic is deterministic (rule-based), but rationale is LLM-enhanced.
 
 from typing import Dict, Any
 from app.state import CommunitySparkState
-from app.utils.openai_helper import llm_compliance_rationale
+from app.utils.gemini_helper import llm_compliance_rationale
 
 
 def compliance_node(state: CommunitySparkState) -> Dict[str, Any]:

@@ -9,7 +9,7 @@ from typing import Dict, Any
 import logging
 from app.state import CommunitySparkState
 from app.data.community_data import lookup_community_metrics
-from app.utils.openai_helper import llm_impact_decision
+from app.utils.gemini_helper import llm_impact_decision
 
 
 def impact_node(state: CommunitySparkState) -> Dict[str, Any]:
