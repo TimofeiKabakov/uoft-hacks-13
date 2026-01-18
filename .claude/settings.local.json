@@ -3,7 +3,11 @@
     "allow": [
       "Bash(git clone:*)",
       "Bash(python -m pytest:*)",
-      "Bash(pip install:*)"
+      "Bash(pip install:*)",
+      "Bash(python -m app.main:*)",
+      "Bash(timeout:*)",
+      "Bash(findstr:*)",
+      "Bash(python -c:*)"
     ]
   }
 }

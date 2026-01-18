@@ -8,24 +8,36 @@
 // Base URL for all API calls - configure this to point to your backend
 export const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
-// API Endpoints - configure these based on your backend routes
+// API Endpoints - configured for real backend
 export const ENDPOINTS = {
   // Health check endpoint
   health: '/health',
-  
-  // Get available sandbox scenarios
+
+  // Authentication
+  login: '/api/v1/auth/login',
+  register: '/api/v1/auth/register',
+  me: '/api/v1/auth/me',
+
+  // Applications
+  createApplication: '/api/v1/applications',
+  connectPlaid: (id: string) => `/api/v1/applications/${id}/plaid-connect`,
+  getStatus: (id: string) => `/api/v1/applications/${id}/status`,
+  getAssessment: (id: string) => `/api/v1/applications/${id}/assessment`,
+  getRecommendations: (id: string) => `/api/v1/applications/${id}/recommendations`,
+  getFinancialSnapshot: (id: string) => `/api/v1/applications/${id}/financial-snapshot`,
+
+  // Coach
+  askCoach: '/api/v1/coach/ask',
+
+  // Action Plans
+  savePlan: '/api/v1/action-plans',
+  getPlans: (userId: string) => `/api/v1/action-plans/${userId}`,
+
+  // Legacy/deprecated endpoints (kept for backwards compatibility during migration)
   scenarios: '/api/scenarios',
-  
-  // Get linked portfolio accounts (Plaid-connected)
   accounts: '/api/accounts',
-  
-  // Run multi-agent evaluation
   evaluate: '/api/evaluate',
-  
-  // Finalize evaluation with optional passkey signing
   finalize: '/api/finalize',
-  
-  // Get workflow diagram (if backend provides SVG/image)
   workflowDiagram: '/api/workflow-diagram',
 } as const;
 

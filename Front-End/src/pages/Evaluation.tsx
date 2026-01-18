@@ -17,6 +17,8 @@ import { ResultsPanel } from '@/components/results/ResultsPanel';
 import { useEvaluationState } from '@/hooks/useEvaluationState';
 import { wizardStepVariants } from '@/lib/animations';
 import type { LocationDetails } from '@/types';
+import { api } from '@/api/client';
+import { useState } from 'react';
 
 const steps = [
   { id: 0, title: 'Business Profile', description: 'Tell us about your business' },
@@ -39,17 +41,76 @@ export default function Evaluation() {
     setEvaluationProgress,
     addLog,
     setResult,
+    setApplicationId,
     reset,
   } = useEvaluationState();
 
-  const handleBusinessProfileSubmit = (profile: typeof state.businessProfile) => {
+  const [isCreatingApplication, setIsCreatingApplication] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleBusinessProfileSubmit = async (profile: typeof state.businessProfile) => {
     setBusinessProfile(profile);
+    setError(null);
+    // Defer application creation until we have a location (next step)
     nextStep();
   };
 
-  const handleLocationSubmit = (location: LocationDetails) => {
+  const handleLocationSubmit = async (location: LocationDetails) => {
     setBusinessProfile({ ...state.businessProfile, selectedLocation: location });
-    nextStep();
+
+    // If we already have an applicationId, just move to next step
+    if (state.applicationId) {
+      nextStep();
+      return;
+    }
+
+    // Ensure we have coordinates before creating the application
+    if (!location.coordinates?.lat || !location.coordinates?.lng) {
+      setError('Please select a location with valid coordinates.');
+      return;
+    }
+
+    // Create application in backend
+    setIsCreatingApplication(true);
+    setError(null);
+
+    try {
+      const profile = { ...state.businessProfile, selectedLocation: location };
+      const safeAge = Math.min(Math.max(profile.yearsInOperation || 30, 18), 100);
+      const loanAmount =
+        profile.annualRevenue && profile.annualRevenue > 0
+          ? Math.max(profile.annualRevenue * 0.1, 1000)
+          : 10000;
+
+      const response = await api.createApplication({
+        job: profile.businessName || profile.businessType || 'Business Owner',
+        age: safeAge,
+        location: {
+          lat: location.coordinates.lat,
+          lng: location.coordinates.lng,
+          address: location.formattedAddress || location.city || 'Unknown address',
+        },
+        loan_amount: loanAmount,
+        loan_purpose: profile.businessType
+          ? `Working capital for ${profile.businessType}`
+          : 'Working capital',
+      });
+
+      if (response.success && response.data) {
+        const appId = response.data.application_id;
+        setApplicationId(appId);
+        // Store in localStorage so dashboard can access it
+        localStorage.setItem('lastApplicationId', appId);
+        nextStep();
+      } else {
+        setError(response.error?.message || 'Failed to create application. Please try again.');
+      }
+    } catch (err) {
+      setError('An unexpected error occurred while creating the application.');
+      console.error('Error creating application:', err);
+    } finally {
+      setIsCreatingApplication(false);
+    }
   };
 
   const renderStep = () => {
@@ -116,6 +177,7 @@ export default function Evaluation() {
             custom={1}
           >
             <BankDataStep
+              applicationId={state.applicationId}
               onNext={nextStep}
               onBack={prevStep}
             />
@@ -134,6 +196,7 @@ export default function Evaluation() {
             custom={1}
           >
             <RunEvaluationStep
+              applicationId={state.applicationId}
               businessProfile={state.businessProfile}
               scenario={state.selectedScenario}
               isEvaluating={state.isEvaluating}
@@ -164,6 +227,12 @@ export default function Evaluation() {
       
       <main className="min-h-screen pt-28 pb-12 px-6">
         <div className="max-w-6xl mx-auto">
+          {error && (
+            <div className="mb-6 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+              {error}
+            </div>
+          )}
+
           {/* Step Indicator */}
           {!state.result && (
             <motion.div

@@ -7,9 +7,9 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
-import { 
-  ArrowRight, 
-  TrendingUp, 
+import {
+  ArrowRight,
+  TrendingUp,
   TrendingDown,
   Heart,
   Droplets,
@@ -26,24 +26,62 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { FinancialCharts } from '@/components/recommendations/FinancialCharts';
 import { staggerContainer, fadeInUp, scaleIn } from '@/lib/animations';
-import { DEMO_FINANCIAL_SNAPSHOT, DEMO_STATS, DEMO_PROGRESS, DEMO_ALERTS } from '@/api/recommendations';
-
-// Mock user for demo
-const DEMO_USER = {
-  name: 'Sarah',
-  businessName: 'Bright Ideas Consulting',
-  lastEvaluation: '2 days ago',
-  nextMilestone: 'Zero overdrafts for 30 days',
-  daysToMilestone: 16,
-};
+import { fetchFinancialSnapshot, fetchHeaderStats } from '@/api/recommendations';
+import { api } from '@/api/client';
+import type { FinancialSnapshot, HeaderStats } from '@/types/recommendations';
 
 export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(true);
+  const [stats, setStats] = useState<HeaderStats | null>(null);
+  const [snapshot, setSnapshot] = useState<FinancialSnapshot | null>(null);
+  const [userData, setUserData] = useState<{ name: string; email: string } | null>(null);
+  const [applicationId, setApplicationId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Simulate data fetch
-    const timer = setTimeout(() => setIsLoading(false), 800);
-    return () => clearTimeout(timer);
+    async function fetchDashboardData() {
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        // Login with dummy auth to get sandbox user
+        const loginResponse = await api.login('sandbox@demo.com', 'password');
+        if (loginResponse.success && loginResponse.data) {
+          setUserData({
+            name: loginResponse.data.user.name,
+            email: loginResponse.data.user.email,
+          });
+        }
+
+        // TODO: Fetch latest application for this user
+        // For now, we'll use a placeholder applicationId if available
+        // In a real implementation, we would fetch user's applications and get the latest one
+        const testApplicationId = localStorage.getItem('lastApplicationId');
+
+        if (testApplicationId) {
+          setApplicationId(testApplicationId);
+
+          // Fetch header stats
+          const statsData = await fetchHeaderStats(testApplicationId);
+          if (statsData) {
+            setStats(statsData);
+          }
+
+          // Fetch financial snapshot
+          const snapshotData = await fetchFinancialSnapshot(testApplicationId);
+          if (snapshotData) {
+            setSnapshot(snapshotData);
+          }
+        }
+      } catch (err) {
+        setError('Failed to load dashboard data');
+        console.error('Dashboard load error:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    fetchDashboardData();
   }, []);
 
   if (isLoading) {
@@ -64,17 +102,24 @@ export default function Dashboard() {
     );
   }
 
-  const scoreTrend = DEMO_PROGRESS.scoreTrend;
-  const TrendIcon = scoreTrend === 'up' ? TrendingUp : scoreTrend === 'down' ? TrendingDown : Sparkles;
-  const trendColor = scoreTrend === 'up' ? 'text-success' : scoreTrend === 'down' ? 'text-destructive' : 'text-muted-foreground';
+  // Default values if no data
+  const fiscalScore = stats?.fiscalHealthScore || 0;
+  const TrendIcon = Sparkles; // TODO: Add trend tracking
+  const trendColor = 'text-muted-foreground';
 
   return (
     <PageTransition>
       <div className="min-h-screen bg-background">
         <Header />
         <GradientOrbs />
-        
+
         <main className="container mx-auto px-4 pt-24 pb-16">
+          {error && (
+            <div className="mb-6 p-4 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive">
+              {error}
+            </div>
+          )}
+
           <motion.div
             variants={staggerContainer}
             initial="hidden"
@@ -86,23 +131,25 @@ export default function Dashboard() {
               <div>
                 <p className="text-muted-foreground">Welcome back,</p>
                 <h1 className="text-3xl md:text-4xl font-bold text-foreground">
-                  {DEMO_USER.name} 👋
+                  {userData?.name || 'User'} 👋
                 </h1>
                 <p className="text-muted-foreground mt-1">
-                  {DEMO_USER.businessName} • Last evaluated {DEMO_USER.lastEvaluation}
+                  {userData?.email || 'No email'} {applicationId && `• Application ${applicationId.substring(0, 8)}`}
                 </p>
               </div>
-              
-              <Link to="/recommendations">
-                <Button size="lg" className="rounded-xl">
-                  View Full Recommendations
-                  <ArrowRight className="w-4 h-4 ml-2" />
-                </Button>
-              </Link>
+
+              {applicationId && (
+                <Link to="/recommendations">
+                  <Button size="lg" className="rounded-xl">
+                    View Full Recommendations
+                    <ArrowRight className="w-4 h-4 ml-2" />
+                  </Button>
+                </Link>
+              )}
             </motion.div>
 
             {/* Quick Stats */}
-            <motion.div 
+            <motion.div
               variants={staggerContainer}
               className="grid grid-cols-2 md:grid-cols-4 gap-4"
             >
@@ -115,11 +162,10 @@ export default function Dashboard() {
                     </div>
                     <div className={`flex items-center gap-1 ${trendColor}`}>
                       <TrendIcon className="w-4 h-4" />
-                      <span className="text-xs font-medium">+12</span>
                     </div>
                   </div>
                   <p className="text-3xl font-bold text-foreground mt-3">
-                    {DEMO_STATS.fiscalHealthScore}
+                    {stats?.fiscalHealthScore || '-'}
                   </p>
                   <p className="text-sm text-muted-foreground">Fiscal Health Score</p>
                 </GlassCard>
@@ -132,7 +178,7 @@ export default function Dashboard() {
                     <Droplets className="w-5 h-5 text-primary" />
                   </div>
                   <p className="text-3xl font-bold text-foreground mt-3">
-                    {DEMO_STATS.cashFlowStability}%
+                    {stats?.cashFlowStability ? `${stats.cashFlowStability}%` : '-'}
                   </p>
                   <p className="text-sm text-muted-foreground">Cash Flow Stability</p>
                 </GlassCard>
@@ -145,7 +191,7 @@ export default function Dashboard() {
                     <Sparkles className="w-5 h-5 text-accent" />
                   </div>
                   <p className="text-3xl font-bold text-foreground mt-3">
-                    {DEMO_STATS.communityImpactMultiplier}x
+                    {stats?.communityImpactMultiplier ? `${stats.communityImpactMultiplier}x` : '-'}
                   </p>
                   <p className="text-sm text-muted-foreground">Community Impact</p>
                 </GlassCard>
@@ -153,88 +199,42 @@ export default function Dashboard() {
 
               {/* Risk Flags */}
               <motion.div variants={scaleIn}>
-                <GlassCard className={`p-5 h-full ${DEMO_STATS.riskFlagsCount > 0 ? 'border-warning/30' : ''}`}>
-                  <div className={`p-2 rounded-lg w-fit ${DEMO_STATS.riskFlagsCount > 0 ? 'bg-warning/10' : 'bg-success/10'}`}>
-                    <AlertTriangle className={`w-5 h-5 ${DEMO_STATS.riskFlagsCount > 0 ? 'text-warning' : 'text-success'}`} />
+                <GlassCard className={`p-5 h-full ${(stats?.riskFlagsCount || 0) > 0 ? 'border-warning/30' : ''}`}>
+                  <div className={`p-2 rounded-lg w-fit ${(stats?.riskFlagsCount || 0) > 0 ? 'bg-warning/10' : 'bg-success/10'}`}>
+                    <AlertTriangle className={`w-5 h-5 ${(stats?.riskFlagsCount || 0) > 0 ? 'text-warning' : 'text-success'}`} />
                   </div>
                   <p className="text-3xl font-bold text-foreground mt-3">
-                    {DEMO_STATS.riskFlagsCount}
+                    {stats?.riskFlagsCount ?? '-'}
                   </p>
                   <p className="text-sm text-muted-foreground">Risk Flags</p>
                 </GlassCard>
               </motion.div>
             </motion.div>
 
-            {/* Next Milestone */}
-            <motion.div variants={fadeInUp}>
-              <GlassCard className="p-5 bg-gradient-to-r from-primary/5 to-accent/5">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <div className="flex items-center gap-4">
-                    <div className="relative w-14 h-14">
-                      <svg className="w-full h-full transform -rotate-90">
-                        <circle cx="28" cy="28" r="24" fill="none" stroke="hsl(var(--muted))" strokeWidth="4" />
-                        <motion.circle
-                          cx="28" cy="28" r="24" fill="none"
-                          stroke="hsl(var(--primary))" strokeWidth="4" strokeLinecap="round"
-                          strokeDasharray={`${2 * Math.PI * 24}`}
-                          initial={{ strokeDashoffset: 2 * Math.PI * 24 }}
-                          animate={{ strokeDashoffset: 2 * Math.PI * 24 * (1 - (30 - DEMO_USER.daysToMilestone) / 30) }}
-                          transition={{ duration: 1, ease: 'easeOut' }}
-                        />
-                      </svg>
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <span className="text-xs font-bold text-foreground">{DEMO_USER.daysToMilestone}d</span>
-                      </div>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Next Milestone</p>
-                      <p className="font-semibold text-foreground">{DEMO_USER.nextMilestone}</p>
-                      <p className="text-xs text-muted-foreground">{DEMO_USER.daysToMilestone} days remaining</p>
-                    </div>
-                  </div>
-                  <Link to="/recommendations">
-                    <Button variant="outline" className="rounded-xl">
-                      See Action Plan
-                      <ChevronRight className="w-4 h-4 ml-1" />
-                    </Button>
-                  </Link>
-                </div>
-              </GlassCard>
-            </motion.div>
-
             {/* Financial Snapshot */}
-            <motion.section variants={fadeInUp}>
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold text-foreground">Your Financial Snapshot</h2>
-                <Badge variant="secondary">Last 30 days</Badge>
-              </div>
-              <FinancialCharts snapshot={DEMO_FINANCIAL_SNAPSHOT} />
-            </motion.section>
-
-            {/* Recent Alerts */}
-            {DEMO_ALERTS.length > 0 && (
+            {snapshot && (
               <motion.section variants={fadeInUp}>
                 <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-xl font-bold text-foreground">Recent Alerts</h2>
-                  <Link to="/recommendations" className="text-sm text-primary hover:underline">
-                    View all
-                  </Link>
+                  <h2 className="text-xl font-bold text-foreground">Your Financial Snapshot</h2>
+                  <Badge variant="secondary">Last 30 days</Badge>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {DEMO_ALERTS.slice(0, 3).map((alert) => (
-                    <GlassCard 
-                      key={alert.id} 
-                      className={`p-4 ${
-                        alert.severity === 'critical' ? 'border-destructive/30' :
-                        alert.severity === 'warning' ? 'border-warning/30' : ''
-                      }`}
-                    >
-                      <p className="font-medium text-foreground text-sm">{alert.title}</p>
-                      <p className="text-xs text-muted-foreground mt-1">{alert.message}</p>
-                    </GlassCard>
-                  ))}
-                </div>
+                <FinancialCharts snapshot={snapshot} />
               </motion.section>
+            )}
+
+            {/* No Data State */}
+            {!applicationId && !isLoading && (
+              <motion.div variants={fadeInUp} className="text-center py-12">
+                <GlassCard className="p-8">
+                  <p className="text-muted-foreground mb-4">You haven't completed an evaluation yet</p>
+                  <Link to="/evaluation">
+                    <Button size="lg" className="rounded-xl">
+                      Start Your First Evaluation
+                      <ArrowRight className="w-4 h-4 ml-2" />
+                    </Button>
+                  </Link>
+                </GlassCard>
+              </motion.div>
             )}
           </motion.div>
         </main>

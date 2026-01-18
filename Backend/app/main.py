@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from app.api.routes import router
+from app.api.auth_routes import router as auth_router
 from app.database.base import Base
 from app.database.session import engine
 from app.core.config import get_settings
@@ -36,7 +37,7 @@ app = FastAPI(
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
+    allow_origins=settings.cors_origins_list if settings else ["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -44,6 +45,7 @@ app.add_middleware(
 
 # Include routes
 app.include_router(router, prefix="/api/v1", tags=["applications"])
+app.include_router(auth_router, prefix="/api/v1")
 
 
 @app.get("/")

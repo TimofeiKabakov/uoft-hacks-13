@@ -24,6 +24,7 @@ export interface EvaluationState {
   activeAgent: AgentLog['agent'] | null;
   logs: AgentLog[];
   result: EvaluationResponse | null;
+  applicationId: string | null;
 }
 
 const initialState: EvaluationState = {
@@ -37,6 +38,7 @@ const initialState: EvaluationState = {
   activeAgent: null,
   logs: [],
   result: null,
+  applicationId: null,
 };
 
 export function useEvaluationState() {
@@ -96,12 +98,16 @@ export function useEvaluationState() {
   }, []);
 
   const setResult = useCallback((result: EvaluationResponse) => {
-    setState(prev => ({ 
-      ...prev, 
-      result, 
+    setState(prev => ({
+      ...prev,
+      result,
       isEvaluating: false,
       evaluationProgress: 100,
     }));
+  }, []);
+
+  const setApplicationId = useCallback((applicationId: string) => {
+    setState(prev => ({ ...prev, applicationId }));
   }, []);
 
   const reset = useCallback(() => {
@@ -121,6 +127,7 @@ export function useEvaluationState() {
     setEvaluationProgress,
     addLog,
     setResult,
+    setApplicationId,
     reset,
   };
 }

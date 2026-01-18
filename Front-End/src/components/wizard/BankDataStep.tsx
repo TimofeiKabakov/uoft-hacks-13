@@ -7,12 +7,12 @@
 
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  ArrowRight, 
-  ArrowLeft, 
-  Building2, 
-  Lock, 
-  Eye, 
+import {
+  ArrowRight,
+  ArrowLeft,
+  Building2,
+  Lock,
+  Eye,
   EyeOff,
   Search,
   Shield,
@@ -24,6 +24,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { staggerContainer, fadeInUp, scaleIn } from '@/lib/animations';
+import { api } from '@/api/client';
 
 // Mock bank institutions for Plaid Sandbox
 const SANDBOX_INSTITUTIONS = [
@@ -39,6 +40,7 @@ const SANDBOX_INSTITUTIONS = [
 ];
 
 interface BankDataStepProps {
+  applicationId: string | null;
   onNext: () => void;
   onBack: () => void;
 }
@@ -52,7 +54,7 @@ interface SelectedBank {
   color: string;
 }
 
-export function BankDataStep({ onNext, onBack }: BankDataStepProps) {
+export function BankDataStep({ applicationId, onNext, onBack }: BankDataStepProps) {
   const [state, setState] = useState<SignInState>('select-bank');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedBank, setSelectedBank] = useState<SelectedBank | null>(null);
@@ -60,6 +62,7 @@ export function BankDataStep({ onNext, onBack }: BankDataStepProps) {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const filteredBanks = SANDBOX_INSTITUTIONS.filter(bank =>
     bank.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -68,24 +71,49 @@ export function BankDataStep({ onNext, onBack }: BankDataStepProps) {
   const handleBankSelect = (bank: SelectedBank) => {
     setSelectedBank(bank);
     setState('credentials');
+    setError(null);
   };
 
   const handleSignIn = async () => {
     if (!username || !password) return;
-    
+    if (!applicationId) {
+      setError('No application ID found. Please restart the evaluation.');
+      return;
+    }
+
     setIsConnecting(true);
     setState('connecting');
-    
-    // Simulate Plaid connection process
-    await new Promise(resolve => setTimeout(resolve, 2500));
-    
-    setState('success');
-    setIsConnecting(false);
-    
-    // Auto-proceed after success animation
-    setTimeout(() => {
-      onNext();
-    }, 1500);
+    setError(null);
+
+    try {
+      // In a real implementation, we would:
+      // 1. Initialize Plaid Link with a link_token from backend
+      // 2. User completes Plaid flow and we get a public_token
+      // 3. Send public_token to backend to exchange for access_token
+
+      // For now, simulate the flow with mock public_token
+      const mockPublicToken = `public-sandbox-${Date.now()}-${selectedBank?.id}`;
+
+      // Call backend to connect Plaid
+      const response = await api.connectPlaid(applicationId, mockPublicToken);
+
+      if (response.success) {
+        setState('success');
+        setIsConnecting(false);
+
+        // Auto-proceed after success animation
+        setTimeout(() => {
+          onNext();
+        }, 1500);
+      } else {
+        throw new Error(response.error?.message || 'Failed to connect bank');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An unexpected error occurred');
+      setState('credentials');
+      setIsConnecting(false);
+      console.error('Error connecting Plaid:', err);
+    }
   };
 
   const handleBackToSearch = () => {
@@ -234,9 +262,16 @@ export function BankDataStep({ onNext, onBack }: BankDataStepProps) {
                   </p>
                 </div>
 
+                {/* Error Display */}
+                {error && (
+                  <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-sm text-destructive">
+                    {error}
+                  </div>
+                )}
+
                 <Button
                   onClick={handleSignIn}
-                  disabled={!username || !password}
+                  disabled={!username || !password || isConnecting}
                   className="w-full h-12 rounded-xl"
                 >
                   <Lock className="w-4 h-4 mr-2" />

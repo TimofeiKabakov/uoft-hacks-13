@@ -43,3 +43,8 @@ wheels/
 
 # OS
 .DS_Store
+
+# Windows reserved device names
+nul
+**/nul
+

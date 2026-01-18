@@ -5,7 +5,7 @@
  * Uses Google Maps API, Places API, and Geocode API.
  */
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { MapPin, Search, ArrowLeft, ArrowRight, Loader2, X, Navigation } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -37,8 +37,24 @@ export function LocationStep({ initialLocation, onSubmit, onBack }: LocationStep
   const [isSearching, setIsSearching] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
   const [isGettingCurrentLocation, setIsGettingCurrentLocation] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const googleApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+  const sessionToken = useMemo(
+    () => (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2)),
+    []
+  );
+
+  const parseAddressComponents = (components: any[] = []) => {
+    const get = (type: string) => components.find((c) => c.types?.includes(type))?.long_name;
+    return {
+      city: get('locality') || get('sublocality') || '',
+      state: get('administrative_area_level_1') || '',
+      country: get('country') || '',
+      postalCode: get('postal_code') || '',
+    };
+  };
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -51,7 +67,7 @@ export function LocationStep({ initialLocation, onSubmit, onBack }: LocationStep
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Simulated place search (will be replaced with actual Google API call)
+  // Google Places autocomplete search (fallback to mock if no key)
   const searchPlaces = useCallback(async (query: string) => {
     if (query.length < 3) {
       setPredictions([]);
@@ -59,42 +75,56 @@ export function LocationStep({ initialLocation, onSubmit, onBack }: LocationStep
     }
 
     setIsSearching(true);
-    
-    // Simulate API delay - Replace with actual Google Places Autocomplete API call
-    await new Promise(resolve => setTimeout(resolve, 300));
-    
-    // Mock predictions - These would come from Google Places API
-    const mockPredictions: PlacePrediction[] = [
-      {
-        place_id: 'ChIJN1t_tDeuEmsRUsoyG83frY4',
-        description: `${query}, New York, NY, USA`,
-        structured_formatting: {
-          main_text: query,
-          secondary_text: 'New York, NY, USA'
-        }
-      },
-      {
-        place_id: 'ChIJIQBpAG2ahYAR_6128GcTUEo',
-        description: `${query}, San Francisco, CA, USA`,
-        structured_formatting: {
-          main_text: query,
-          secondary_text: 'San Francisco, CA, USA'
-        }
-      },
-      {
-        place_id: 'ChIJE9on3F3HwoAR9AhGJW_fL-I',
-        description: `${query}, Los Angeles, CA, USA`,
-        structured_formatting: {
-          main_text: query,
-          secondary_text: 'Los Angeles, CA, USA'
-        }
-      },
-    ];
-    
-    setPredictions(mockPredictions);
-    setShowDropdown(true);
-    setIsSearching(false);
-  }, []);
+    setSearchError(null);
+
+    if (!googleApiKey) {
+      const mockPredictions: PlacePrediction[] = [
+        {
+          place_id: 'mock-1',
+          description: `${query} (mock), New York, NY, USA`,
+          structured_formatting: { main_text: query, secondary_text: 'New York, NY, USA' }
+        },
+        {
+          place_id: 'mock-2',
+          description: `${query} (mock), San Francisco, CA, USA`,
+          structured_formatting: { main_text: query, secondary_text: 'San Francisco, CA, USA' }
+        },
+      ];
+      setPredictions(mockPredictions);
+      setShowDropdown(true);
+      setIsSearching(false);
+      setSearchError('Add VITE_GOOGLE_MAPS_API_KEY to enable full Google results.');
+      return;
+    }
+
+    try {
+      const resp = await fetch(
+        `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(
+          query
+        )}&types=address&key=${googleApiKey}&sessiontoken=${sessionToken}`
+      );
+      const data = await resp.json();
+      if (data.status !== 'OK') {
+        setSearchError(`Places API error: ${data.status}`);
+        setPredictions([]);
+      } else {
+        setPredictions(
+          (data.predictions || []).map((p: any) => ({
+            place_id: p.place_id,
+            description: p.description,
+            structured_formatting: p.structured_formatting,
+          }))
+        );
+        setShowDropdown(true);
+      }
+    } catch (error) {
+      console.error('Error fetching places:', error);
+      setSearchError('Unable to fetch places right now.');
+      setPredictions([]);
+    } finally {
+      setIsSearching(false);
+    }
+  }, [googleApiKey, sessionToken]);
 
   // Debounced search
   useEffect(() => {
@@ -110,28 +140,61 @@ export function LocationStep({ initialLocation, onSubmit, onBack }: LocationStep
   const handleSelectPlace = async (prediction: PlacePrediction) => {
     setIsSearching(true);
     setShowDropdown(false);
-    
-    // Simulate Geocode API call
-    await new Promise(resolve => setTimeout(resolve, 200));
-    
-    // Mock geocoded data - Replace with actual Google Geocode API response
-    const locationDetails: LocationDetails = {
-      formattedAddress: prediction.description,
-      placeId: prediction.place_id,
-      coordinates: {
-        lat: 40.7128 + Math.random() * 0.1, // Mock coordinates
-        lng: -74.0060 + Math.random() * 0.1,
-      },
-      city: prediction.structured_formatting.secondary_text.split(',')[0],
-      state: prediction.structured_formatting.secondary_text.split(',')[1]?.trim(),
-      country: 'USA',
-      postalCode: '10001', // Would come from Geocode API
-    };
-    
-    setSelectedLocation(locationDetails);
-    setSearchQuery(prediction.description);
-    setPredictions([]);
-    setIsSearching(false);
+
+    if (!googleApiKey) {
+      const locationDetails: LocationDetails = {
+        formattedAddress: prediction.description,
+        placeId: prediction.place_id,
+        coordinates: {
+          lat: 40.7128 + Math.random() * 0.1,
+          lng: -74.0060 + Math.random() * 0.1,
+        },
+        city: prediction.structured_formatting.secondary_text.split(',')[0],
+        state: prediction.structured_formatting.secondary_text.split(',')[1]?.trim(),
+        country: 'USA',
+        postalCode: '10001',
+      };
+      setSelectedLocation(locationDetails);
+      setSearchQuery(prediction.description);
+      setPredictions([]);
+      setIsSearching(false);
+      return;
+    }
+
+    try {
+      const detailsResp = await fetch(
+        `https://maps.googleapis.com/maps/api/place/details/json?placeid=${prediction.place_id}&fields=formatted_address,geometry,address_components&key=${googleApiKey}&sessiontoken=${sessionToken}`
+      );
+      const details = await detailsResp.json();
+
+      if (details.status !== 'OK') {
+        setSearchError(`Place details error: ${details.status}`);
+        setIsSearching(false);
+        return;
+      }
+
+      const components = parseAddressComponents(details.result.address_components);
+      const coords = details.result.geometry?.location;
+
+      const locationDetails: LocationDetails = {
+        formattedAddress: details.result.formatted_address,
+        placeId: prediction.place_id,
+        coordinates: coords ? { lat: Number(coords.lat), lng: Number(coords.lng) } : undefined,
+        city: components.city,
+        state: components.state,
+        country: components.country,
+        postalCode: components.postalCode,
+      };
+
+      setSelectedLocation(locationDetails);
+      setSearchQuery(details.result.formatted_address);
+      setPredictions([]);
+    } catch (error) {
+      console.error('Error fetching place details:', error);
+      setSearchError('Unable to fetch place details right now.');
+    } finally {
+      setIsSearching(false);
+    }
   };
 
   // Get current location using browser geolocation
@@ -147,24 +210,40 @@ export function LocationStep({ initialLocation, onSubmit, onBack }: LocationStep
       async (position) => {
         const { latitude, longitude } = position.coords;
         
-        // Simulate reverse geocoding - Replace with actual Google Geocode API
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        const locationDetails: LocationDetails = {
-          formattedAddress: '123 Current Street, Your City, State, USA',
-          coordinates: {
-            lat: latitude,
-            lng: longitude,
-          },
-          city: 'Your City',
-          state: 'State',
-          country: 'USA',
-          postalCode: '12345',
-        };
-        
-        setSelectedLocation(locationDetails);
-        setSearchQuery(locationDetails.formattedAddress);
-        setIsGettingCurrentLocation(false);
+        try {
+          if (googleApiKey) {
+            const resp = await fetch(
+              `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${googleApiKey}`
+            );
+            const data = await resp.json();
+            const first = data.results?.[0];
+            const components = parseAddressComponents(first?.address_components);
+
+            const locationDetails: LocationDetails = {
+              formattedAddress: first?.formatted_address || 'Current location',
+              coordinates: { lat: latitude, lng: longitude },
+              city: components.city,
+              state: components.state,
+              country: components.country,
+              postalCode: components.postalCode,
+            };
+
+            setSelectedLocation(locationDetails);
+            setSearchQuery(locationDetails.formattedAddress);
+          } else {
+            const locationDetails: LocationDetails = {
+              formattedAddress: 'Current location (mock)',
+              coordinates: { lat: latitude, lng: longitude },
+            };
+            setSelectedLocation(locationDetails);
+            setSearchQuery(locationDetails.formattedAddress);
+          }
+        } catch (error) {
+          console.error('Error reverse geocoding:', error);
+          alert('Unable to reverse geocode your location.');
+        } finally {
+          setIsGettingCurrentLocation(false);
+        }
       },
       (error) => {
         console.error('Error getting location:', error);
@@ -270,6 +349,9 @@ export function LocationStep({ initialLocation, onSubmit, onBack }: LocationStep
               )}
             </div>
           </motion.div>
+          {searchError && (
+            <p className="text-xs text-destructive">{searchError}</p>
+          )}
 
           {/* Use Current Location Button */}
           <motion.div variants={fadeInUp}>

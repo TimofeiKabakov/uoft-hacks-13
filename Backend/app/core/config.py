@@ -15,7 +15,11 @@ class Settings(BaseSettings):
     # Configuration
     PLAID_ENV: str = "sandbox"
     DATABASE_URL: str = "sqlite+aiosqlite:///./loan_assessment.db"
-    CORS_ORIGINS: str = "http://localhost:3000"
+    CORS_ORIGINS: str = (
+        "http://localhost:8080,http://127.0.0.1:8080,"
+        "http://localhost:5173,http://127.0.0.1:5173,"
+        "http://localhost:3000,http://127.0.0.1:3000"
+    )
 
     # Security
     ENCRYPTION_KEY: str

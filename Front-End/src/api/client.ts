@@ -152,6 +152,101 @@ class ApiClient {
   async getWorkflowDiagram(): Promise<ApiResponse<{ url?: string; svg?: string }>> {
     return this.get(ENDPOINTS.workflowDiagram);
   }
+
+  // ============ New Backend Integration Methods ============
+
+  /**
+   * Login (dummy auth - returns sandbox user)
+   */
+  async login(email: string, password: string): Promise<ApiResponse<{ user: any; token: string; message: string }>> {
+    return this.post(ENDPOINTS.login, { email, password });
+  }
+
+  /**
+   * Create application
+   */
+  async createApplication(data: {
+    job: string;
+    age: number;
+    location: { lat: number; lng: number; address: string };
+    loan_amount: number;
+    loan_purpose: string;
+  }): Promise<ApiResponse<{ application_id: string; status: string; created_at: string }>> {
+    return this.post(ENDPOINTS.createApplication, data);
+  }
+
+  /**
+   * Connect Plaid to application
+   */
+  async connectPlaid(applicationId: string, publicToken: string): Promise<ApiResponse<{ application_id: string; status: string; plaid_connected: boolean }>> {
+    const endpoint = typeof ENDPOINTS.connectPlaid === 'function'
+      ? ENDPOINTS.connectPlaid(applicationId)
+      : ENDPOINTS.connectPlaid;
+    return this.post(endpoint, { plaid_public_token: publicToken });
+  }
+
+  /**
+   * Get application status
+   */
+  async getApplicationStatus(applicationId: string): Promise<ApiResponse<{ application_id: string; status: string; has_results: boolean }>> {
+    const endpoint = typeof ENDPOINTS.getStatus === 'function'
+      ? ENDPOINTS.getStatus(applicationId)
+      : ENDPOINTS.getStatus;
+    return this.get(endpoint);
+  }
+
+  /**
+   * Get assessment results
+   */
+  async getAssessmentResults(applicationId: string): Promise<ApiResponse<any>> {
+    const endpoint = typeof ENDPOINTS.getAssessment === 'function'
+      ? ENDPOINTS.getAssessment(applicationId)
+      : ENDPOINTS.getAssessment;
+    return this.get(endpoint);
+  }
+
+  /**
+   * Get recommendations
+   */
+  async getRecommendationsList(applicationId: string): Promise<ApiResponse<any[]>> {
+    const endpoint = typeof ENDPOINTS.getRecommendations === 'function'
+      ? ENDPOINTS.getRecommendations(applicationId)
+      : ENDPOINTS.getRecommendations;
+    return this.get(endpoint);
+  }
+
+  /**
+   * Get financial snapshot
+   */
+  async getFinancialSnapshotData(applicationId: string): Promise<ApiResponse<any>> {
+    const endpoint = typeof ENDPOINTS.getFinancialSnapshot === 'function'
+      ? ENDPOINTS.getFinancialSnapshot(applicationId)
+      : ENDPOINTS.getFinancialSnapshot;
+    return this.get(endpoint);
+  }
+
+  /**
+   * Ask coach a question
+   */
+  async askCoach(question: string, applicationId?: string, context?: any): Promise<ApiResponse<{ response: string; action_steps: string[]; expected_impact: string }>> {
+    return this.post(ENDPOINTS.askCoach, {
+      question,
+      application_id: applicationId,
+      context: context || {},
+    });
+  }
+
+  /**
+   * Save action plan
+   */
+  async saveActionPlan(plan: {
+    application_id: string;
+    timeframe: string;
+    action_items: any[];
+    targets?: any[];
+  }): Promise<ApiResponse<any>> {
+    return this.post(ENDPOINTS.savePlan, plan);
+  }
 }
 
 // ============ Singleton Export ============

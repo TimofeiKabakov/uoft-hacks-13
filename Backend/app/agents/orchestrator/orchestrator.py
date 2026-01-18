@@ -5,9 +5,11 @@ This orchestrator manages the workflow between specialized agents:
 - Financial Analyst: Analyzes financial health
 - Market Researcher: Evaluates market conditions
 - Risk Assessor: Makes final loan decision
+- Coach: Generates personalized recommendations
 
 The orchestrator runs Financial Analyst and Market Researcher in parallel
-for optimal performance, then passes results to Risk Assessor for final decision.
+for optimal performance, then passes results to Risk Assessor for final decision,
+and finally generates recommendations via Coach agent.
 """
 import asyncio
 from typing import Dict, Any, Optional
@@ -17,6 +19,7 @@ from app.agents.llm import get_llm
 from app.agents.financial_analyst import FinancialAnalyst
 from app.agents.market_researcher import MarketResearcher
 from app.agents.risk_assessor import RiskAssessor
+from app.agents.coach import CoachAgent
 
 
 class Orchestrator:
@@ -38,6 +41,7 @@ class Orchestrator:
         self.financial_analyst = FinancialAnalyst(llm)
         self.market_researcher = MarketResearcher(llm)
         self.risk_assessor = RiskAssessor(llm)
+        self.coach = CoachAgent(llm)
 
     async def run_assessment(
         self,
@@ -132,6 +136,24 @@ class Orchestrator:
 
             messages.append("Risk assessment completed")
 
+            # Phase 3: Generate Recommendations via Coach Agent
+            messages.append("Generating personalized recommendations")
+
+            try:
+                recommendations = await self.coach.generate_recommendations(
+                    financial_data=financial_results,
+                    market_data=market_results,
+                    assessment_data=risk_results,
+                    user_job=user_job,
+                    user_age=user_age,
+                    loan_amount=loan_amount,
+                    loan_purpose=loan_purpose
+                )
+                messages.append(f"Generated {len(recommendations)} recommendations")
+            except Exception as e:
+                messages.append(f"Recommendation generation error: {str(e)}")
+                recommendations = []
+
             # Calculate processing time
             end_time = datetime.now()
             processing_time = (end_time - start_time).total_seconds()
@@ -143,12 +165,13 @@ class Orchestrator:
                 'financial_metrics': financial_results,
                 'market_analysis': market_results,
                 'final_assessment': risk_results,
+                'recommendations': recommendations,
                 'metadata': {
                     'processing_time_seconds': processing_time,
                     'start_time': start_time.isoformat(),
                     'end_time': end_time.isoformat(),
                     'messages': messages,
-                    'agents_used': ['FinancialAnalyst', 'MarketResearcher', 'RiskAssessor'],
+                    'agents_used': ['FinancialAnalyst', 'MarketResearcher', 'RiskAssessor', 'Coach'],
                     'parallel_execution': True
                 }
             }
@@ -167,6 +190,7 @@ class Orchestrator:
                 'financial_metrics': self._get_default_financial_results(str(e)),
                 'market_analysis': self._get_default_market_results(str(e)),
                 'final_assessment': self._get_default_risk_results(str(e)),
+                'recommendations': [],
                 'metadata': {
                     'processing_time_seconds': processing_time,
                     'start_time': start_time.isoformat(),

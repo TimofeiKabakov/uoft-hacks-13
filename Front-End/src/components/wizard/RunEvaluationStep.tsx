@@ -10,11 +10,12 @@ import { Play, Search, Heart, Shield, GraduationCap, Loader2, ArrowLeft } from '
 import { Button } from '@/components/ui/button';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { staggerContainer, fadeInUp, buttonHover, scaleInBounce } from '@/lib/animations';
-import { MOCK_EVALUATION_RESPONSE } from '@/api/client';
 import { FEATURE_FLAGS, UI_CONFIG } from '@/config';
 import type { AgentLog, EvaluationResponse, BusinessProfile, SandboxScenario } from '@/types';
+import { api } from '@/api/client';
 
 interface RunEvaluationStepProps {
+  applicationId: string | null;
   businessProfile: Partial<BusinessProfile>;
   scenario: SandboxScenario | null;
   isEvaluating: boolean;
@@ -36,6 +37,7 @@ const agents = [
 ] as const;
 
 export function RunEvaluationStep({
+  applicationId,
   businessProfile,
   scenario,
   isEvaluating,
@@ -49,46 +51,125 @@ export function RunEvaluationStep({
   onBack,
 }: RunEvaluationStepProps) {
   const [currentAgentIndex, setCurrentAgentIndex] = useState(-1);
+  const [error, setError] = useState<string | null>(null);
 
-  // Simulate evaluation progress
-  const runSimulatedEvaluation = useCallback(async () => {
-    const mockLogs = MOCK_EVALUATION_RESPONSE.logs;
-    let logIndex = 0;
-
-    for (let i = 0; i < agents.length; i++) {
-      setCurrentAgentIndex(i);
-      const agent = agents[i];
-      onProgress((i / agents.length) * 100, agent.id);
-
-      // Add logs for this agent
-      const agentLogs = mockLogs.filter(log => log.agent === agent.id);
-      for (const log of agentLogs) {
-        await new Promise(resolve => setTimeout(resolve, UI_CONFIG.animations.logStreamDelay * 1000));
-        onAddLog({
-          ...log,
-          timestamp: new Date().toISOString(),
-        });
-        logIndex++;
-      }
-
-      // Wait before moving to next agent
-      await new Promise(resolve => setTimeout(resolve, 600));
+  // Run real backend evaluation
+  const runRealEvaluation = useCallback(async () => {
+    if (!applicationId) {
+      setError('No application ID found');
+      return;
     }
 
-    // Complete
-    onProgress(100);
-    await new Promise(resolve => setTimeout(resolve, 300));
-    onComplete(MOCK_EVALUATION_RESPONSE);
-  }, [onProgress, onAddLog, onComplete]);
+    setError(null);
+
+    try {
+      // Simulate agent progression with status polling
+      for (let i = 0; i < agents.length; i++) {
+        setCurrentAgentIndex(i);
+        const agent = agents[i];
+        onProgress((i / agents.length) * 100, agent.id);
+
+        // Add simulated log for agent start
+        onAddLog({
+          agent: agent.id,
+          message: `${agent.name} analyzing...`,
+          timestamp: new Date().toISOString(),
+          severity: 'info',
+        });
+
+        // Simulate agent working
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+
+      // Poll for assessment results
+      onProgress(90);
+      onAddLog({
+        agent: 'COACH',
+        message: 'Waiting for assessment to complete...',
+        timestamp: new Date().toISOString(),
+        severity: 'info',
+      });
+
+      // Poll the backend for status
+      let attempts = 0;
+      const maxAttempts = 30;
+      let assessmentComplete = false;
+
+      while (attempts < maxAttempts && !assessmentComplete) {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        const statusResponse = await api.getApplicationStatus(applicationId);
+        if (statusResponse.success && statusResponse.data.has_results) {
+          assessmentComplete = true;
+        }
+
+        attempts++;
+      }
+
+      if (!assessmentComplete) {
+        throw new Error('Assessment timeout - results not ready');
+      }
+
+      // Fetch the assessment results
+      const assessmentResponse = await api.getAssessmentResults(applicationId);
+      if (!assessmentResponse.success || !assessmentResponse.data) {
+        throw new Error('Failed to fetch assessment results');
+      }
+
+      // Fetch recommendations
+      const recsResponse = await api.getRecommendationsList(applicationId);
+      const recommendations = recsResponse.success ? recsResponse.data : [];
+
+      // Map backend response to frontend EvaluationResponse format
+      const result: EvaluationResponse = {
+        id: applicationId,
+        decision: 'APPROVE', // TODO: Get from assessment
+        fiscalHealthScore: Math.round((assessmentResponse.data.financial_metrics?.income_stability_score || 0) * 100),
+        communityMultiplier: 1.0, // TODO: Get from assessment
+        finalScore: Math.round((assessmentResponse.data.financial_metrics?.income_stability_score || 0) * 100),
+        loanTerms: {
+          amount: 0, // TODO: Get from assessment
+          apr: 0,
+          termMonths: 0,
+          monthlyPayment: 0,
+          totalInterest: 0,
+        },
+        logs: logs,
+        accountSummaries: [],
+        riskFlags: [],
+        improvementPlan: {
+          priorityActions: recommendations.slice(0, 3).map(rec => ({
+            id: rec.id,
+            title: rec.title,
+            description: rec.recommended_action,
+            priority: rec.priority,
+            estimatedImpact: rec.expected_impact,
+            timeframe: '3-6 months',
+          })),
+          alerts: [],
+          targets: [],
+        },
+        evaluatedAt: new Date().toISOString(),
+        processingTimeMs: 0,
+      };
+
+      onProgress(100);
+      onComplete(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An unexpected error occurred');
+      console.error('Error running evaluation:', err);
+    }
+  }, [applicationId, onProgress, onAddLog, onComplete, logs]);
 
   useEffect(() => {
     if (isEvaluating && currentAgentIndex === -1) {
-      runSimulatedEvaluation();
+      runRealEvaluation();
     }
-  }, [isEvaluating, currentAgentIndex, runSimulatedEvaluation]);
+  }, [isEvaluating, currentAgentIndex, runRealEvaluation]);
 
   const handleStart = () => {
     setCurrentAgentIndex(-1);
+    setError(null);
     onStart();
   };
 
@@ -226,12 +307,25 @@ export function RunEvaluationStep({
           )}
         </GlassCard>
 
+        {/* Error Display */}
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6"
+          >
+            <GlassCard hover="none" className="p-4 bg-destructive/10 border-destructive/20">
+              <p className="text-sm text-destructive font-medium">Error: {error}</p>
+            </GlassCard>
+          </motion.div>
+        )}
+
         {/* Action Buttons */}
         <motion.div variants={fadeInUp} className="flex items-center justify-between">
           <motion.div variants={buttonHover} initial="rest" whileHover="hover" whileTap="tap">
-            <Button 
-              variant="outline" 
-              onClick={onBack} 
+            <Button
+              variant="outline"
+              onClick={onBack}
               className="rounded-xl"
               disabled={isEvaluating}
             >
@@ -247,8 +341,9 @@ export function RunEvaluationStep({
               animate="show"
             >
               <motion.div variants={buttonHover} initial="rest" whileHover="hover" whileTap="tap">
-                <Button 
+                <Button
                   onClick={handleStart}
+                  disabled={!applicationId}
                   className="rounded-xl px-8 py-6 text-lg font-semibold"
                   size="lg"
                 >

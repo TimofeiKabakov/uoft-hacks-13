@@ -19,23 +19,64 @@ import { CoachPanel } from '@/components/recommendations/CoachPanel';
 import { AlertsPanel, ProgressTracker } from '@/components/recommendations/AlertsProgress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { staggerContainer, fadeInUp } from '@/lib/animations';
-import { fetchRecommendations, savePlan, loadSavedPlan, DEMO_ACTIONS } from '@/api/recommendations';
-import type { RecommendationsState, Recommendation, ActionItem, ActionStatus } from '@/types/recommendations';
+import { fetchRecommendations, fetchHeaderStats, fetchFinancialSnapshot, savePlan, loadSavedPlan } from '@/api/recommendations';
+import type { Recommendation, ActionItem, ActionStatus, HeaderStats, FinancialSnapshot, Alert, ProgressData } from '@/types/recommendations';
+
+const computeProgress = (actions: ActionItem[]): ProgressData => {
+  const completed = actions.filter((a) => a.status === 'done').length;
+  const total = actions.length;
+
+  return {
+    streakDays: completed,
+    streakType: completed > 0 ? 'On track' : 'Getting started',
+    completedActions: completed,
+    totalActions: total,
+    scoreTrend: completed > 0 ? 'up' : 'stable',
+    approvalProgress: total ? Math.round((completed / total) * 100) : 0,
+  };
+};
 
 export default function Recommendations() {
-  const [state, setState] = useState<RecommendationsState | null>(null);
+  const [applicationId, setApplicationId] = useState<string | null>(null);
+  const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
+  const [headerStats, setHeaderStats] = useState<HeaderStats | null>(null);
+  const [financialSnapshot, setFinancialSnapshot] = useState<FinancialSnapshot | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedRecommendation, setSelectedRecommendation] = useState<Recommendation | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [actionPlan, setActionPlan] = useState<ActionItem[]>([]);
+  const [alerts] = useState<Alert[]>([]);
+  const [progress, setProgress] = useState<ProgressData>(computeProgress([]));
 
   useEffect(() => {
     const loadData = async () => {
       setIsLoading(true);
-      const data = await fetchRecommendations();
-      setState(data);
-      const saved = loadSavedPlan();
-      setActionPlan(saved || data.actionPlan);
+
+      // Get applicationId from localStorage
+      const storedApplicationId = localStorage.getItem('lastApplicationId');
+      setApplicationId(storedApplicationId);
+
+      if (!storedApplicationId) {
+        console.warn('No application ID found');
+        setIsLoading(false);
+        return;
+      }
+
+      // Fetch all data in parallel
+      const [recs, stats, snapshot, savedPlan] = await Promise.all([
+        fetchRecommendations(storedApplicationId),
+        fetchHeaderStats(storedApplicationId),
+        fetchFinancialSnapshot(storedApplicationId),
+        loadSavedPlan(),
+      ]);
+
+      setRecommendations(recs);
+      setHeaderStats(stats);
+      setFinancialSnapshot(snapshot);
+
+      const planActions = savedPlan || [];
+      setActionPlan(planActions);
+      setProgress(computeProgress(planActions));
       setIsLoading(false);
     };
     loadData();
@@ -63,20 +104,43 @@ export default function Recommendations() {
       status: 'pending',
       timeframe: 30,
     };
-    setActionPlan(prev => [...prev, newAction]);
+    setActionPlan(prev => {
+      const next = [...prev, newAction];
+      setProgress(computeProgress(next));
+      return next;
+    });
     toast.success('Added to your 30-day plan');
   };
 
   const handleStatusChange = (actionId: string, status: ActionStatus) => {
-    setActionPlan(prev => prev.map(a => a.id === actionId ? { ...a, status } : a));
+    setActionPlan(prev => {
+      const next = prev.map(a => a.id === actionId ? { ...a, status } : a);
+      setProgress(computeProgress(next));
+      return next;
+    });
   };
 
   const handleSave = async () => {
-    await savePlan(actionPlan);
-    toast.success('Plan saved successfully');
+    if (!applicationId) {
+      toast.error('Missing application ID. Please restart the flow.');
+      return;
+    }
+
+    const success = await savePlan({
+      applicationId,
+      timeframe: '30',
+      actionItems: actionPlan,
+      targets: [],
+    });
+
+    if (success) {
+      toast.success('Plan saved successfully');
+    } else {
+      toast.error('Unable to save plan right now');
+    }
   };
 
-  if (isLoading || !state) {
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-background">
         <Header />
@@ -101,16 +165,18 @@ export default function Recommendations() {
       <div className="min-h-screen bg-background">
         <Header />
         <GradientOrbs />
-        
+
         <main className="container mx-auto px-4 pt-24 pb-16">
           <motion.div variants={staggerContainer} initial="hidden" animate="show" className="space-y-12">
             {/* Header */}
-            <HeaderSummary
-              decision={state.decision}
-              estimatedLoanRange={state.estimatedLoanRange}
-              readinessScore={state.readinessScore}
-              stats={state.stats}
-            />
+            {headerStats && (
+              <HeaderSummary
+                decision="PENDING"
+                estimatedLoanRange={{ min: 0, max: 0 }}
+                readinessScore={headerStats.fiscalHealthScore}
+                stats={headerStats}
+              />
+            )}
 
             {/* Two Column Layout */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -120,7 +186,7 @@ export default function Recommendations() {
                 <motion.section variants={fadeInUp}>
                   <h2 className="text-xl font-bold text-foreground mb-4">Key Insights</h2>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {state.recommendations.map((rec) => (
+                    {recommendations.map((rec) => (
                       <RecommendationCard
                         key={rec.id}
                         recommendation={rec}
@@ -133,14 +199,16 @@ export default function Recommendations() {
                 </motion.section>
 
                 {/* Charts */}
-                <motion.section variants={fadeInUp}>
-                  <h2 className="text-xl font-bold text-foreground mb-4">Financial Snapshot</h2>
-                  <FinancialCharts snapshot={state.financialSnapshot} />
-                </motion.section>
+                {financialSnapshot && (
+                  <motion.section variants={fadeInUp}>
+                    <h2 className="text-xl font-bold text-foreground mb-4">Financial Snapshot</h2>
+                    <FinancialCharts snapshot={financialSnapshot} />
+                  </motion.section>
+                )}
 
                 {/* Targets */}
                 <motion.section variants={fadeInUp}>
-                  <TargetsPanel targets={state.targets} currentScore={state.stats.fiscalHealthScore} />
+                  <TargetsPanel targets={[]} currentScore={headerStats?.fiscalHealthScore || 0} />
                 </motion.section>
 
                 {/* Action Plan */}
@@ -152,8 +220,8 @@ export default function Recommendations() {
               {/* Right Column - 1/3 */}
               <div className="space-y-6">
                 <CoachPanel />
-                <AlertsPanel alerts={state.alerts} />
-                <ProgressTracker progress={state.progress} onSave={handleSave} />
+                <AlertsPanel alerts={alerts} />
+                <ProgressTracker progress={progress} onSave={handleSave} />
               </div>
             </div>
           </motion.div>
