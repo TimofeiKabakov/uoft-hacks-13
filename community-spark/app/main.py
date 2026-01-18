@@ -14,8 +14,8 @@ import hashlib
 import time
 import uuid
 from typing import Dict, Any, Optional
-from fastapi import FastAPI, HTTPException, Response
-from pydantic import BaseModel
+from fastapi import FastAPI, HTTPException, Response, Header
+from pydantic import BaseModel, EmailStr
 from dotenv import load_dotenv
 from app.graph import build_graph
 from app.state import CommunitySparkState
@@ -24,6 +24,7 @@ from app.data.feature_extractor import extract_bank_features
 from app.data.user_profiles import get_user_profile, convert_profile_to_plaid_format
 from app.security.webauthn_routes import router as webauthn_router
 from app.maps.google_maps import geocode_address
+from app.database.mongodb import user_manager
 
 # Load environment variables from .env file
 load_dotenv()
@@ -99,6 +100,25 @@ class EvaluatePlaidRequest(BaseModel):
     """Request model for /evaluate/plaid endpoint"""
     business_profile: Dict[str, Any]
     profile: Optional[str] = None  # Optional: "bad_habit_user" or None for default Plaid sandbox
+
+
+class RegisterRequest(BaseModel):
+    """Request model for user registration"""
+    email: EmailStr
+    username: str
+    password: str
+    full_name: Optional[str] = ""
+
+
+class LoginRequest(BaseModel):
+    """Request model for user login"""
+    identifier: str  # Email or username
+    password: str
+
+
+class ConnectBankRequest(BaseModel):
+    """Request model for connecting bank account"""
+    bank_profile: str  # Profile name to connect
 
 
 class FinalizeRequest(BaseModel):
@@ -561,6 +581,178 @@ async def passkey_page():
     return Response(content=html_content, media_type="text/html")
 
 
+# ==================== AUTHENTICATION ENDPOINTS ====================
+
+@app.post("/auth/register")
+async def register(request: RegisterRequest) -> Dict[str, Any]:
+    """
+    Register a new user account.
+    
+    Args:
+        request: Contains email, username, password, and full_name
+        
+    Returns:
+        Dict with success status and user info
+    """
+    if not user_manager:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    result = user_manager.register_user(
+        email=request.email,
+        username=request.username,
+        password=request.password,
+        full_name=request.full_name
+    )
+    
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result["error"])
+    
+    return result
+
+
+@app.post("/auth/login")
+async def login(request: LoginRequest) -> Dict[str, Any]:
+    """
+    Authenticate a user and create a session.
+    
+    Args:
+        request: Contains identifier (email/username) and password
+        
+    Returns:
+        Dict with session token and user info
+    """
+    if not user_manager:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    result = user_manager.authenticate_user(
+        identifier=request.identifier,
+        password=request.password
+    )
+    
+    if not result["success"]:
+        raise HTTPException(status_code=401, detail=result["error"])
+    
+    return result
+
+
+@app.post("/auth/logout")
+async def logout(authorization: Optional[str] = Header(None)) -> Dict[str, Any]:
+    """
+    Logout a user by invalidating their session.
+    
+    Args:
+        authorization: Bearer token from Authorization header
+        
+    Returns:
+        Dict with success status
+    """
+    if not user_manager:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid authorization header")
+    
+    session_token = authorization.replace("Bearer ", "")
+    result = user_manager.logout_user(session_token)
+    
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result["error"])
+    
+    return result
+
+
+@app.get("/auth/me")
+async def get_current_user(authorization: Optional[str] = Header(None)) -> Dict[str, Any]:
+    """
+    Get current user information from session token.
+    
+    Args:
+        authorization: Bearer token from Authorization header
+        
+    Returns:
+        Dict with user info
+    """
+    if not user_manager:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid authorization header")
+    
+    session_token = authorization.replace("Bearer ", "")
+    result = user_manager.validate_session(session_token)
+    
+    if not result["success"]:
+        raise HTTPException(status_code=401, detail=result["error"])
+    
+    return result
+
+
+@app.post("/auth/connect-bank")
+async def connect_bank(
+    request: ConnectBankRequest,
+    authorization: Optional[str] = Header(None)
+) -> Dict[str, Any]:
+    """
+    Connect a bank account profile to user's account.
+    
+    This simulates the Plaid Link flow where users would normally connect
+    their real bank account. For demo purposes, we connect predefined profiles.
+    
+    Args:
+        request: Contains bank_profile name
+        authorization: Bearer token from Authorization header
+        
+    Returns:
+        Dict with success status
+    """
+    if not user_manager:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid authorization header")
+    
+    session_token = authorization.replace("Bearer ", "")
+    
+    # Validate bank profile exists
+    if not get_user_profile(request.bank_profile):
+        raise HTTPException(status_code=400, detail=f"Bank profile '{request.bank_profile}' not found")
+    
+    result = user_manager.connect_bank_account(session_token, request.bank_profile)
+    
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result["error"])
+    
+    return result
+
+
+@app.post("/auth/disconnect-bank")
+async def disconnect_bank(authorization: Optional[str] = Header(None)) -> Dict[str, Any]:
+    """
+    Disconnect bank account from user's account.
+    
+    Args:
+        authorization: Bearer token from Authorization header
+        
+    Returns:
+        Dict with success status
+    """
+    if not user_manager:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid authorization header")
+    
+    session_token = authorization.replace("Bearer ", "")
+    result = user_manager.disconnect_bank_account(session_token)
+    
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result["error"])
+    
+    return result
+
+
+# ==================== LOAN EVALUATION ENDPOINTS ====================
+
 @app.post("/evaluate")
 async def evaluate(request: EvaluateRequest) -> Dict[str, Any]:
     """
@@ -624,17 +816,22 @@ async def evaluate(request: EvaluateRequest) -> Dict[str, Any]:
 
 
 @app.post("/evaluate/plaid")
-async def evaluate_with_plaid(request: EvaluatePlaidRequest) -> Dict[str, Any]:
+async def evaluate_with_plaid(
+    request: EvaluatePlaidRequest,
+    authorization: Optional[str] = Header(None)
+) -> Dict[str, Any]:
     """
-    Evaluate a loan application using real Plaid transaction data.
+    Evaluate a loan application using connected bank account data.
     
     This endpoint demonstrates the full flow:
-    1. Fetch transactions from Plaid sandbox
-    2. Extract financial features from transaction data
-    3. Run evaluation through agent pipeline
+    1. Validate user session and get connected bank account
+    2. Fetch transactions from connected bank profile or Plaid sandbox
+    3. Extract financial features from transaction data
+    4. Run evaluation through agent pipeline
     
     Args:
-        request: Contains business_profile only (bank data fetched from Plaid)
+        request: Contains business_profile
+        authorization: Bearer token (optional - if provided, uses connected bank account)
         
     Returns:
         Evaluation results with used_plaid flag set to true
@@ -643,16 +840,29 @@ async def evaluate_with_plaid(request: EvaluatePlaidRequest) -> Dict[str, Any]:
     if not request.business_profile:
         raise HTTPException(status_code=400, detail="business_profile is required")
     
+    # Try to get connected bank account from session
+    connected_profile = None
+    if authorization and authorization.startswith("Bearer ") and user_manager:
+        session_token = authorization.replace("Bearer ", "")
+        session_result = user_manager.validate_session(session_token)
+        
+        if session_result["success"]:
+            connected_profile = session_result["user"].get("connected_bank")
+    
+    # Use connected profile if available, otherwise use request profile or default
+    profile_to_use = connected_profile or request.profile
+    
     try:
         # Step 1: Get transaction data (either from user profile or Plaid sandbox)
-        if request.profile:
+        if profile_to_use:
             # Use predefined user profile
-            profile_data = get_user_profile(request.profile)
+            profile_data = get_user_profile(profile_to_use)
             if not profile_data:
-                raise HTTPException(status_code=400, detail=f"Profile '{request.profile}' not found")
+                raise HTTPException(status_code=400, detail=f"Profile '{profile_to_use}' not found")
             
             # Convert profile to Plaid format
             plaid_data = convert_profile_to_plaid_format(profile_data)
+            data_source = f"Connected Bank Account ({profile_to_use})"
         else:
             # Fetch transactions from Plaid sandbox (default)
             # Uses environment variables: PLAID_CLIENT_ID, PLAID_SECRET
@@ -660,6 +870,7 @@ async def evaluate_with_plaid(request: EvaluatePlaidRequest) -> Dict[str, Any]:
                 start_date="2023-01-01",
                 end_date="2024-01-01"
             )
+            data_source = "Plaid Sandbox (Demo)"
         
         # Step 2: Extract bank features from Plaid transaction data
         bank_data = extract_bank_features(plaid_data)
@@ -716,6 +927,7 @@ async def evaluate_with_plaid(request: EvaluatePlaidRequest) -> Dict[str, Any]:
         "log": final_state.get("log", []),
         "needs_signature": needs_signature,
         "used_plaid": True,
+        "data_source": data_source,  # Show where data came from
         "extracted_features": bank_data,  # Include the extracted features for transparency
         "improvement_plan": final_state.get("improvement_plan")
     }

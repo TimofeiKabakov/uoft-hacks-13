@@ -82,9 +82,16 @@ def extract_bank_features(plaid_json: dict) -> dict:
             total_outflows += abs(amount)
         
         # Check for NSF/overdraft transactions
+        # Handle category as either string or list
+        category = txn.get("category", "")
+        if isinstance(category, list):
+            category = " ".join(str(c) for c in category)
+        else:
+            category = str(category)
+        
         transaction_name = (txn.get("name", "") + " " + 
                            txn.get("merchant_name", "") + " " + 
-                           txn.get("category", "")).lower()
+                           category).lower()
         
         if any(keyword in transaction_name for keyword in nsf_keywords):
             nsf_count += 1

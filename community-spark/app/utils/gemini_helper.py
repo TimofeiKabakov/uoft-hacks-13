@@ -306,3 +306,120 @@ Provide your score and detailed reasoning."""
         print(f"[WARNING] Gemini audit decision failed, using rule-based fallback: {str(e)}")
         return None
 
+
+def llm_generate_improvement_plan(
+    auditor_flags: list,
+    auditor_score: int,
+    bank_data: dict,
+    business_profile: dict,
+    decision_rationale: str,
+    final_decision: str
+) -> Optional[dict]:
+    """
+    Use Gemini to generate a personalized improvement plan with spending habit analysis.
+    
+    Analyzes transaction patterns, spending habits, and financial behaviors
+    to provide specific, actionable recommendations.
+    
+    Args:
+        auditor_flags: List of risk flags
+        auditor_score: Current financial health score
+        bank_data: Financial features and metrics
+        business_profile: Business information
+        decision_rationale: Why the decision was made
+        final_decision: DENY or REFER
+        
+    Returns:
+        Dict with improvement plan or None if LLM unavailable
+    """
+    if not gemini_client and not gemini_model:
+        return None
+    
+    try:
+        # Build context for Gemini
+        prompt = f"""You are a financial coach helping a small business owner improve their loan application.
+
+**Current Situation:**
+- Decision: {final_decision}
+- Financial Health Score: {auditor_score}/100 (Need 75+ for approval)
+- Business: {business_profile.get('name', 'Unknown')} ({business_profile.get('type', 'Unknown')})
+- Risk Flags: {', '.join(auditor_flags) if auditor_flags else 'None'}
+
+**Financial Metrics:**
+- Average Monthly Revenue: ${bank_data.get('avg_monthly_revenue', 0):,.2f}
+- Revenue Months: {bank_data.get('revenue_months', 0)}
+- Revenue Volatility: {bank_data.get('volatility', 0):.2f} (0=stable, 1=volatile)
+- NSF/Overdraft Count: {bank_data.get('nsf_count', 0)}
+- Debt-to-Income Ratio: {bank_data.get('debt_to_income', 0):.2f}
+
+**Decision Rationale:**
+{decision_rationale}
+
+**Your Task:**
+Analyze their spending habits and financial behavior. If there are NSF fees, overdrafts, payday loans, gambling, excessive subscriptions, or poor cash management, call them out specifically and explain how these habits are hurting their loan application.
+
+Provide a detailed improvement plan in JSON format with:
+{{
+  "spending_analysis": "2-3 sentences analyzing their spending habits and financial behavior. Be direct about bad habits if present.",
+  "critical_issues": ["list 2-3 most critical problems"],
+  "recommendations": [
+    {{
+      "issue": "specific problem",
+      "action": "actionable step to fix it",
+      "priority": "Critical|High|Medium|Low",
+      "expected_impact": "+X points",
+      "timeframe": "how long to implement"
+    }}
+  ],
+  "timeline": "overall timeline (e.g., '3-6 months')",
+  "target_score": 75,
+  "resources": [
+    {{
+      "name": "resource name",
+      "type": "Guide|Course|Tool",
+      "description": "what it helps with"
+    }}
+  ]
+}}
+
+Be honest and direct. If they have gambling expenses, payday loans, or overdraft fees, explicitly mention these as red flags."""
+
+        # Generate improvement plan
+        if USE_OLD_API and gemini_model:
+            response = gemini_model.generate_content(prompt)
+            response_text = response.text
+        else:
+            response = gemini_client.models.generate_content(
+                model='gemini-1.5-flash',
+                contents=prompt
+            )
+            response_text = response.text
+        
+        # Parse JSON from response
+        # Handle markdown code blocks
+        if "```json" in response_text:
+            response_text = response_text.split("```json")[1].split("```")[0].strip()
+        elif "```" in response_text:
+            response_text = response_text.split("```")[1].split("```")[0].strip()
+        
+        improvement_plan = json.loads(response_text)
+        
+        # Add business info
+        improvement_plan["decision"] = final_decision
+        improvement_plan["business_name"] = business_profile.get("name", "Unknown")
+        improvement_plan["current_score"] = auditor_score
+        
+        # Build summary from spending analysis + critical issues
+        summary = improvement_plan.get("spending_analysis", "")
+        if improvement_plan.get("critical_issues"):
+            summary += f" Key issues: {', '.join(improvement_plan['critical_issues'][:2])}."
+        
+        improvement_plan["summary"] = summary
+        
+        return improvement_plan
+    
+    except Exception as e:
+        print(f"[WARNING] Gemini improvement plan failed: {str(e)}")
+        return None
+
+

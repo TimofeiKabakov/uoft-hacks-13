@@ -190,7 +190,12 @@ def get_user_profile(profile_name: str):
         Dict with profile data, or None if not found
     """
     profiles = {
-        "bad_habit_user": BAD_HABIT_USER
+        "bad_habit_user": BAD_HABIT_USER,
+        # Aliases for the same profile
+        "badhabituser": BAD_HABIT_USER,
+        "bad_habits": BAD_HABIT_USER,
+        "demo": BAD_HABIT_USER,
+        "test": BAD_HABIT_USER
     }
     return profiles.get(profile_name)
 

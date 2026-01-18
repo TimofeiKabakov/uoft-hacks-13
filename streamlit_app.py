@@ -1,6 +1,6 @@
 """
 Community Spark - Modern Financial Dashboard
-A user-friendly interface for community loan evaluation with modern UI/UX
+A user-friendly interface for community loan evaluation with modern UI/UX and MongoDB authentication
 """
 
 import streamlit as st
@@ -14,9 +14,84 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 import pandas as pd
 import os
+from urllib.parse import unquote
 
 # Backend configuration
 BACKEND_URL = "http://localhost:8000"
+
+# ==================== SESSION STATE INITIALIZATION ====================
+# Initialize session state for authentication and app state
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+if "session_token" not in st.session_state:
+    st.session_state.session_token = None
+if "user_info" not in st.session_state:
+    st.session_state.user_info = None
+if "current_page" not in st.session_state:
+    st.session_state.current_page = "Dashboard"
+if "evaluation_result" not in st.session_state:
+    st.session_state.evaluation_result = None
+if "evaluation_id" not in st.session_state:
+    st.session_state.evaluation_id = None
+if "place_id" not in st.session_state:
+    st.session_state.place_id = None
+if "place_address" not in st.session_state:
+    st.session_state.place_address = None
+if "place_lat" not in st.session_state:
+    st.session_state.place_lat = None
+if "place_lng" not in st.session_state:
+    st.session_state.place_lng = None
+if "show_bank_connect" not in st.session_state:
+    st.session_state.show_bank_connect = False
+
+
+# ==================== AUTHENTICATION FUNCTIONS ====================
+
+def check_session():
+    """Check if user session is valid."""
+    if st.session_state.session_token:
+        try:
+            response = requests.get(
+                f"{BACKEND_URL}/auth/me",
+                headers={"Authorization": f"Bearer {st.session_state.session_token}"},
+                timeout=5
+            )
+            if response.ok:
+                result = response.json()
+                if result.get("success"):
+                    st.session_state.user_info = result["user"]
+                    st.session_state.authenticated = True
+                    return True
+        except Exception as e:
+            print(f"Session check failed: {e}")
+    
+    st.session_state.authenticated = False
+    st.session_state.session_token = None
+    st.session_state.user_info = None
+    return False
+
+
+def logout():
+    """Logout current user."""
+    if st.session_state.session_token:
+        try:
+            requests.post(
+                f"{BACKEND_URL}/auth/logout",
+                headers={"Authorization": f"Bearer {st.session_state.session_token}"},
+                timeout=5
+            )
+        except:
+            pass
+    
+    st.session_state.authenticated = False
+    st.session_state.session_token = None
+    st.session_state.user_info = None
+    st.session_state.current_page = "Dashboard"
+    st.rerun()
+
+
+# Check session on app load
+check_session()
 
 # Page configuration - Modern Financial Dashboard
 st.set_page_config(
@@ -620,21 +695,96 @@ components.html("""
 </script>
 """, height=0)
 
-# Initialize session state
-if 'evaluation_result' not in st.session_state:
-    st.session_state.evaluation_result = None
-if 'evaluation_id' not in st.session_state:
-    st.session_state.evaluation_id = None
-if 'current_page' not in st.session_state:
-    st.session_state.current_page = "Dashboard"
-if 'place_id' not in st.session_state:
-    st.session_state.place_id = None
-if 'place_address' not in st.session_state:
-    st.session_state.place_address = None
-if 'place_lat' not in st.session_state:
-    st.session_state.place_lat = None
-if 'place_lng' not in st.session_state:
-    st.session_state.place_lng = None
+# ==================== AUTHENTICATION SCREEN ====================
+# Show login/signup screen if not authenticated
+if not st.session_state.authenticated:
+    st.markdown("""
+    <div style="max-width: 450px; margin: 80px auto; padding: 40px; background: white; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+        <div style="text-align: center; margin-bottom: 30px;">
+            <img src="app/static/logo.png" width="80" style="margin-bottom: 16px;">
+            <h1 style="color: #1a1d29; margin: 0;">Community Spark</h1>
+            <p style="color: #6c757d; margin-top: 8px;">Empowering Communities Through Smart Lending</p>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    # Tab for Login / Sign Up
+    auth_tab = st.tabs(["Login", "Sign Up"])
+    
+    with auth_tab[0]:  # Login Tab
+        st.markdown("### Welcome Back")
+        with st.form("login_form"):
+            identifier = st.text_input("Email or Username")
+            password = st.text_input("Password", type="password")
+            login_btn = st.form_submit_button("Login", use_container_width=True)
+            
+            if login_btn:
+                if identifier and password:
+                    try:
+                        response = requests.post(
+                            f"{BACKEND_URL}/auth/login",
+                            json={"identifier": identifier, "password": password},
+                            timeout=10
+                        )
+                        
+                        if response.ok:
+                            result = response.json()
+                            st.session_state.session_token = result["session_token"]
+                            st.session_state.user_info = result["user"]
+                            st.session_state.authenticated = True
+                            st.success("✅ Login successful!")
+                            st.rerun()
+                        else:
+                            error = response.json().get("detail", "Login failed")
+                            st.error(f"❌ {error}")
+                    except Exception as e:
+                        st.error(f"❌ Connection error: {e}")
+                else:
+                    st.warning("⚠️ Please fill in all fields")
+    
+    with auth_tab[1]:  # Sign Up Tab
+        st.markdown("### Create Account")
+        with st.form("signup_form"):
+            email = st.text_input("Email")
+            username = st.text_input("Username")
+            full_name = st.text_input("Full Name (optional)")
+            password = st.text_input("Password", type="password")
+            password_confirm = st.text_input("Confirm Password", type="password")
+            signup_btn = st.form_submit_button("Create Account", use_container_width=True)
+            
+            if signup_btn:
+                if email and username and password and password_confirm:
+                    if password != password_confirm:
+                        st.error("❌ Passwords don't match")
+                    elif len(password) < 6:
+                        st.error("❌ Password must be at least 6 characters")
+                    else:
+                        try:
+                            response = requests.post(
+                                f"{BACKEND_URL}/auth/register",
+                                json={
+                                    "email": email,
+                                    "username": username,
+                                    "password": password,
+                                    "full_name": full_name
+                                },
+                                timeout=10
+                            )
+                            
+                            if response.ok:
+                                st.success("✅ Account created! Please login.")
+                            else:
+                                error = response.json().get("detail", "Registration failed")
+                                st.error(f"❌ {error}")
+                        except Exception as e:
+                            st.error(f"❌ Connection error: {e}")
+                else:
+                    st.warning("⚠️ Please fill in all required fields")
+    
+    st.markdown("</div>", unsafe_allow_html=True)
+    st.stop()  # Stop execution here if not authenticated
+
+
+# ==================== MAIN AUTHENTICATED APP ====================
 
 # Sidebar - Professional Navigation
 with st.sidebar:
@@ -646,11 +796,36 @@ with st.sidebar:
     # Display logo image
     st.image("logo.png", width=80)
     
-    st.markdown("""
+    st.markdown(f"""
         <div class="logo-text">Community Spark</div>
-        <div class="logo-subtitle">Loan Advisory Platform</div>
+        <div class="logo-subtitle">Welcome, {st.session_state.user_info.get('username', 'User')}</div>
     </div>
     """, unsafe_allow_html=True)
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # Bank Connection Status
+    connected_bank = st.session_state.user_info.get("connected_bank")
+    if connected_bank:
+        st.success(f"🏦 Bank Connected: {connected_bank}")
+        if st.button("Disconnect Bank", use_container_width=True):
+            try:
+                response = requests.post(
+                    f"{BACKEND_URL}/auth/disconnect-bank",
+                    headers={"Authorization": f"Bearer {st.session_state.session_token}"},
+                    timeout=10
+                )
+                if response.ok:
+                    st.session_state.user_info["connected_bank"] = None
+                    st.success("✅ Bank disconnected")
+                    st.rerun()
+            except Exception as e:
+                st.error(f"Error: {e}")
+    else:
+        st.warning("⚠️ No bank account connected")
+        if st.button("Connect Bank Account", use_container_width=True):
+            st.session_state.show_bank_connect = True
+            st.rerun()
     
     st.markdown("<br>", unsafe_allow_html=True)
     
@@ -672,28 +847,185 @@ with st.sidebar:
     
     st.markdown("<br><br>", unsafe_allow_html=True)
     
-    # Security Section
-    st.markdown("### Security")
-    with st.expander("Authentication", expanded=False):
-        st.markdown("""
-        **WebAuthn Passkeys**
-        - Passwordless authentication
-        - Biometric security
-        - FIDO2 compliant
-        """)
-        if st.button("Manage Passkeys"):
-            st.markdown("[Open Passkeys →](http://localhost:8000/passkeys)")
+    # Logout Button
+    if st.button("🚪 Logout", use_container_width=True):
+        logout()
     
     st.markdown("<br>", unsafe_allow_html=True)
     
     # Footer
     st.markdown("---")
-    st.markdown("""
+    st.markdown(f"""
     <div style='text-align: center; font-size: 11px; color: rgba(255,255,255,0.6);'>
-        Community Spark v0.2.0<br>
+        Community Spark v0.3.0<br>
+        Logged in as: {st.session_state.user_info.get('email', 'Unknown')}<br>
         © 2026 All Rights Reserved
     </div>
     """, unsafe_allow_html=True)
+
+
+# ==================== BANK CONNECTION MODAL ====================
+if st.session_state.show_bank_connect:
+    # Initialize bank login step if not set
+    if "bank_login_step" not in st.session_state:
+        st.session_state.bank_login_step = "select_bank"
+    
+    # Modal container (using centered div instead of fixed positioning)
+    st.markdown("""
+    <div style="position: relative; margin: 40px auto; max-width: 600px; background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.15);">
+    """, unsafe_allow_html=True)
+    
+    # Step 1: Select Bank
+    if st.session_state.bank_login_step == "select_bank":
+        st.markdown("### 🏦 Select Your Bank")
+        st.markdown("Choose your bank to securely connect your account")
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        # Fake bank options with logos
+        banks = [
+            {"id": "demo_bank", "name": "Demo Community Bank", "logo": "🏦"},
+            {"id": "test_bank", "name": "Test Financial Services", "logo": "🏛️"},
+            {"id": "first_national", "name": "First National Bank", "logo": "💼"}
+        ]
+        
+        for bank in banks:
+            col_logo, col_name, col_btn = st.columns([1, 4, 2])
+            with col_logo:
+                st.markdown(f"<div style='font-size: 40px; text-align: center;'>{bank['logo']}</div>", unsafe_allow_html=True)
+            with col_name:
+                st.markdown(f"**{bank['name']}**")
+                st.caption("Personal & Business Banking")
+            with col_btn:
+                if st.button("Select", key=f"select_{bank['id']}", use_container_width=True):
+                    st.session_state.selected_bank = bank
+                    st.session_state.bank_login_step = "login"
+                    st.rerun()
+            
+            st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        if st.button("Cancel", use_container_width=True):
+            st.session_state.show_bank_connect = False
+            st.session_state.bank_login_step = "select_bank"
+            st.rerun()
+    
+    # Step 2: Bank Login
+    elif st.session_state.bank_login_step == "login":
+        selected_bank = st.session_state.get("selected_bank", {"name": "Bank", "logo": "🏦"})
+        
+        # Bank header
+        st.markdown(f"""
+        <div style="text-align: center; margin-bottom: 20px;">
+            <div style="font-size: 50px;">{selected_bank['logo']}</div>
+            <h3 style="margin: 10px 0; color: #1a1d29;">{selected_bank['name']}</h3>
+            <p style="color: #6c757d; font-size: 14px;">Secure Online Banking</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("---")
+        
+        st.markdown("### Sign In to Your Account")
+        st.info("💡 **Demo Mode**: Use username **bad_habit_user** (any password works)")
+        
+        with st.form("bank_login_form"):
+            username = st.text_input(
+                "Username or Account Number",
+                placeholder="Enter your username",
+                help="Try: bad_habit_user"
+            )
+            password = st.text_input(
+                "Password",
+                type="password",
+                placeholder="Enter your password",
+                help="Any password works in demo mode"
+            )
+            
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                back_btn = st.form_submit_button("← Back", use_container_width=True)
+            with col2:
+                login_btn = st.form_submit_button("Sign In", use_container_width=True, type="primary")
+            
+            if back_btn:
+                st.session_state.bank_login_step = "select_bank"
+                st.rerun()
+            
+            if login_btn:
+                if not username or not password:
+                    st.error("❌ Please enter both username and password")
+                else:
+                    # Map username to profile (case insensitive)
+                    username_lower = username.lower().strip()
+                    
+                    # Profile mapping
+                    profile_map = {
+                        "bad_habit_user": "bad_habit_user",
+                        "badhabituser": "bad_habit_user",
+                        "bad_habits": "bad_habit_user",
+                        "demo": "bad_habit_user",
+                        "test": "bad_habit_user"
+                    }
+                    
+                    bank_profile = profile_map.get(username_lower, "bad_habit_user")
+                    
+                    # Simulate loading
+                    with st.spinner("🔐 Authenticating..."):
+                        try:
+                            response = requests.post(
+                                f"{BACKEND_URL}/auth/connect-bank",
+                                headers={"Authorization": f"Bearer {st.session_state.session_token}"},
+                                json={"bank_profile": bank_profile},
+                                timeout=10
+                            )
+                            
+                            if response.ok:
+                                st.session_state.user_info["connected_bank"] = bank_profile
+                                st.session_state.bank_login_step = "success"
+                                st.rerun()
+                            else:
+                                error = response.json().get("detail", "Connection failed")
+                                st.error(f"❌ {error}")
+                        except Exception as e:
+                            st.error(f"❌ Connection error: {e}")
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("""
+        <div style="text-align: center; font-size: 12px; color: #6c757d;">
+            🔒 Your credentials are encrypted and secure<br>
+            Demo mode - All connections are simulated
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # Step 3: Success
+    elif st.session_state.bank_login_step == "success":
+        st.markdown("""
+        <div style="text-align: center; padding: 40px 20px;">
+            <div style="font-size: 80px; margin-bottom: 20px;">✅</div>
+            <h2 style="color: #28a745; margin: 0;">Connected Successfully!</h2>
+            <p style="color: #6c757d; margin-top: 10px;">Your bank account has been securely linked</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("---")
+        
+        connected_profile = st.session_state.user_info.get("connected_bank", "Unknown")
+        st.success(f"✅ **Connected Profile:** {connected_profile}")
+        st.info("You can now evaluate loan applications using your connected bank account data.")
+        
+        if st.button("Continue to Dashboard", use_container_width=True, type="primary"):
+            st.session_state.show_bank_connect = False
+            st.session_state.bank_login_step = "select_bank"
+            st.rerun()
+    
+    st.markdown("</div>", unsafe_allow_html=True)
+    
+    # Stop execution here so main content doesn't show behind modal
+    st.stop()
+
 
 # Main Content Area
 current_page = st.session_state.current_page
@@ -1188,6 +1520,19 @@ if current_page == "Dashboard":
         st.markdown("---")
         
         with st.form("loan_evaluation_form"):
+            # Bank Connection Check
+            if not st.session_state.user_info.get("connected_bank"):
+                st.warning("⚠️ **No Bank Account Connected** - You need to connect a bank account to evaluate your loan application.")
+                if st.form_submit_button("Connect Bank Account"):
+                    st.session_state.show_bank_connect = True
+                    st.rerun()
+                st.stop()
+            else:
+                st.success(f"🏦 Using connected bank account: **{st.session_state.user_info.get('connected_bank')}**")
+            
+            st.markdown("---")
+            st.markdown("### 🏢 Business Information")
+            
             col_form1, col_form2 = st.columns(2)
             
             with col_form1:
@@ -1230,9 +1575,11 @@ if current_page == "Dashboard":
                 
                 with st.spinner("🔄 Evaluating loan application..."):
                     try:
+                        # Use session token to automatically use connected bank account
                         response = requests.post(
                             f"{BACKEND_URL}/evaluate/plaid",
                             json={"business_profile": business_profile},
+                            headers={"Authorization": f"Bearer {st.session_state.session_token}"},
                             timeout=30
                         )
                         
@@ -1244,7 +1591,6 @@ if current_page == "Dashboard":
                             st.rerun()
                         else:
                             st.error(f"Evaluation failed: {response.json().get('detail', 'Unknown error')}")
-                    
                     except Exception as e:
                         st.error(f"Error connecting to backend: {e}")
 
@@ -1288,6 +1634,19 @@ if current_page == "Dashboard":
                 st.markdown("### 🎯 Improvement Plan")
                 improvement_plan = result.get("improvement_plan")
                 
+                # Spending Analysis (if available)
+                if improvement_plan.get("spending_analysis"):
+                    st.markdown("#### 💡 Spending Habit Analysis")
+                    st.warning(improvement_plan.get("spending_analysis"))
+                
+                # Critical Issues
+                if improvement_plan.get("critical_issues"):
+                    st.markdown("#### ⚠️ Critical Issues")
+                    for issue in improvement_plan.get("critical_issues", []):
+                        st.markdown(f"- {issue}")
+                    st.markdown("")
+                
+                # Summary
                 st.info(improvement_plan.get("summary", ""))
                 
                 st.markdown("**Recommendations:**")
@@ -1299,6 +1658,8 @@ if current_page == "Dashboard":
                         "Low": "#6c757d"
                     }.get(rec.get("priority", "Medium"), "#0066FF")
                     
+                    timeframe = f" • {rec.get('timeframe', '')}" if rec.get('timeframe') else ""
+                    
                     st.markdown(f"""
                     <div class="metric-card" style="margin-bottom: 12px; padding: 16px;">
                         <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
@@ -1308,7 +1669,10 @@ if current_page == "Dashboard":
                             </span>
                         </div>
                         <p style="color: #6c757d; margin: 8px 0; font-size: 14px;">{rec.get('action', 'N/A')}</p>
-                        <div style="color: #28a745; font-size: 12px; font-weight: 600;">{rec.get('expected_impact', '')}</div>
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span style="color: #28a745; font-size: 12px; font-weight: 600;">{rec.get('expected_impact', '')}</span>
+                            <span style="color: #6c757d; font-size: 12px;">{timeframe}</span>
+                        </div>
                     </div>
                     """, unsafe_allow_html=True)
                 
@@ -1319,6 +1683,8 @@ if current_page == "Dashboard":
                     with st.expander("📚 Resources"):
                         for resource in improvement_plan.get("resources", []):
                             st.markdown(f"- **{resource.get('name')}** ({resource.get('type')})")
+                            if resource.get("description"):
+                                st.markdown(f"  _{resource.get('description')}_")
                             if resource.get("url"):
                                 st.markdown(f"  [Learn more →]({resource.get('url')})")
         
@@ -1432,9 +1798,22 @@ elif current_page == "Coaching":
             st.metric("Current Score", f"{improvement_plan.get('current_score', 0)}/100")
             st.metric("Target Score", f"{improvement_plan.get('target_score', 75)}/100")
         
+        # Spending Analysis
+        if improvement_plan.get("spending_analysis"):
+            st.markdown("---")
+            st.markdown("### 💡 Spending Habit Analysis")
+            st.warning(improvement_plan.get("spending_analysis"))
+        
+        # Critical Issues
+        if improvement_plan.get("critical_issues"):
+            st.markdown("---")
+            st.markdown("### ⚠️ Critical Issues")
+            for issue in improvement_plan.get("critical_issues", []):
+                st.markdown(f"- **{issue}**")
+        
         # Summary
         st.markdown("---")
-        st.markdown("### Summary")
+        st.markdown("### 📋 Summary")
         st.info(improvement_plan.get("summary", ""))
         
         # Recommendations
@@ -1450,6 +1829,8 @@ elif current_page == "Coaching":
                     "Medium": "#0066FF",
                     "Low": "#6c757d"
                 }.get(rec.get("priority", "Medium"), "#0066FF")
+                
+                timeframe = f"<div style='color: #6c757d; font-size: 13px; margin-top: 8px;'>⏱️ Timeframe: {rec.get('timeframe', 'N/A')}</div>" if rec.get('timeframe') else ""
                 
                 st.markdown(f"""
                 <div class="metric-card" style="margin-bottom: 16px;">
@@ -1468,8 +1849,9 @@ elif current_page == "Coaching":
                         {rec.get('action', 'N/A')}
                     </p>
                     <div style="background: #d4edda; color: #28a745; padding: 8px 12px; border-radius: 6px; font-size: 13px; font-weight: 600; margin-top: 8px; display: inline-block;">
-                        {rec.get('expected_impact', '')}
+                        💰 {rec.get('expected_impact', '')}
                     </div>
+                    {timeframe}
                 </div>
                 """, unsafe_allow_html=True)
         else:
@@ -1487,8 +1869,8 @@ elif current_page == "Coaching":
                 <div style="font-size: 24px; font-weight: 700; color: #0066FF;">
                     {improvement_plan.get('timeline')}
                 </div>
-            </div>
-            """, unsafe_allow_html=True)
+    </div>
+    """, unsafe_allow_html=True)
 
         # Resources
         if improvement_plan.get("resources"):
@@ -1500,11 +1882,14 @@ elif current_page == "Coaching":
             
             resources = improvement_plan.get("resources", [])
             for resource in resources:
+                description = f"<div style='font-size: 12px; color: #6c757d; margin-top: 4px;'>{resource.get('description', '')}</div>" if resource.get('description') else ""
+                
                 st.markdown(f"""
                 <div style="padding: 16px; border-bottom: 1px solid #f0f0f0; display: flex; justify-content: space-between; align-items: center;">
                     <div>
                         <div style="font-weight: 600; color: #1a1d29; margin-bottom: 4px;">{resource.get('name', 'N/A')}</div>
                         <div style="font-size: 12px; color: #6c757d;">{resource.get('type', 'N/A')}</div>
+                        {description}
                     </div>
                     {f'<a href="{resource.get("url")}" target="_blank" style="color: #0066FF; text-decoration: none; font-weight: 600;">View →</a>' if resource.get('url') else ''}
                 </div>
