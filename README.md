@@ -87,7 +87,7 @@
 <div align="center">
 
 #### Landing Page
-![Landing Page](<img src="https://github.com/user-attachments/assets/e98ce2e4-121e-4f63-a762-0adda2d4746c" alt="Landing Page" width="500"/>)
+![Landing Page](docs/images/landing-page.png)
 
 #### Application Wizard
 ![Application Wizard](docs/images/application-wizard.png)
