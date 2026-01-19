@@ -98,8 +98,7 @@
 #### Recommendations View
 ![Recommendations](docs/images/recommendations.png)
 
-#### Financial Charts
-![Financial Charts](docs/images/financial-charts.png)
+
 
 </div>
 
