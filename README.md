@@ -74,14 +74,6 @@
 
 ## Demo
 
-<div align="center">
-
-### Demo Video
-
-[![Demo Video](https://img.shields.io/badge/Watch-Demo_Video-red?style=for-the-badge&logo=youtube)](YOUR_DEMO_VIDEO_URL_HERE)
-
-</div>
-
 ### Screenshots
 
 <div align="center">
