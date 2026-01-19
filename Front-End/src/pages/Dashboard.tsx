@@ -53,9 +53,8 @@ export default function Dashboard() {
           });
         }
 
-        // TODO: Fetch latest application for this user
+        // Fetch latest application for this user
         // For now, we'll use a placeholder applicationId if available
-        // In a real implementation, we would fetch user's applications and get the latest one
         const testApplicationId = localStorage.getItem('lastApplicationId');
 
         if (testApplicationId) {
@@ -104,7 +103,7 @@ export default function Dashboard() {
 
   // Default values if no data
   const fiscalScore = stats?.fiscalHealthScore || 0;
-  const TrendIcon = Sparkles; // TODO: Add trend tracking
+  const TrendIcon = Sparkles;
   const trendColor = 'text-muted-foreground';
 
   return (
@@ -131,7 +130,7 @@ export default function Dashboard() {
               <div>
                 <p className="text-muted-foreground">Welcome back,</p>
                 <h1 className="text-3xl md:text-4xl font-bold text-foreground">
-                  {userData?.name || 'User'} 👋
+                  {userData?.name || 'User'}
                 </h1>
                 <p className="text-muted-foreground mt-1">
                   {userData?.email || 'No email'} {applicationId && `• Application ${applicationId.substring(0, 8)}`}

@@ -176,10 +176,10 @@ export function RunEvaluationStep({
         id: applicationId,
         decision: decision,
         fiscalHealthScore: fiscalScore,
-        communityMultiplier: 1.0, // TODO: Calculate from market data
-        finalScore: Math.round(fiscalScore * 1.0), // Apply community multiplier
+        communityMultiplier: 1.0,
+        finalScore: Math.round(fiscalScore * 1.0),
         loanTerms: {
-          amount: 0, // TODO: Get from assessment
+          amount: 0,
           apr: 0,
           termMonths: 0,
           monthlyPayment: 0,

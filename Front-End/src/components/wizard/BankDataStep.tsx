@@ -29,15 +29,15 @@ import { api } from '@/api/client';
 
 // Mock bank institutions for Plaid Sandbox
 const SANDBOX_INSTITUTIONS = [
-  { id: 'plaid', name: 'Plaid Bank', logo: '🔗', color: '#00D084' },
-  { id: 'chase', name: 'Chase', logo: '🏦', color: '#117ACA' },
-  { id: 'bofa', name: 'Bank of America', logo: '🏛️', color: '#E31837' },
-  { id: 'wells', name: 'Wells Fargo', logo: '🏧', color: '#D71E28' },
-  { id: 'citi', name: 'Citibank', logo: '🏢', color: '#003B70' },
-  { id: 'usbank', name: 'US Bank', logo: '🏦', color: '#0C2340' },
-  { id: 'capital', name: 'Capital One', logo: '💳', color: '#004977' },
-  { id: 'pnc', name: 'PNC Bank', logo: '🏛️', color: '#FF6200' },
-  { id: 'td', name: 'TD Bank', logo: '🏧', color: '#34A853' },
+  { id: 'plaid', name: 'Plaid Bank', logo: '', color: '#00D084' },
+  { id: 'chase', name: 'Chase', logo: '', color: '#117ACA' },
+  { id: 'bofa', name: 'Bank of America', logo: '', color: '#E31837' },
+  { id: 'wells', name: 'Wells Fargo', logo: '', color: '#D71E28' },
+  { id: 'citi', name: 'Citibank', logo: '', color: '#003B70' },
+  { id: 'usbank', name: 'US Bank', logo: '', color: '#0C2340' },
+  { id: 'capital', name: 'Capital One', logo: '', color: '#004977' },
+  { id: 'pnc', name: 'PNC Bank', logo: '', color: '#FF6200' },
+  { id: 'td', name: 'TD Bank', logo: '', color: '#34A853' },
 ];
 
 interface BankDataStepProps {

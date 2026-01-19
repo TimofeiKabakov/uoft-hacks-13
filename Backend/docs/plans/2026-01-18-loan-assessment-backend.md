@@ -2408,7 +2408,7 @@ if [ ! -f .env ]; then
     python scripts/generate_encryption_key.py
 
     echo ""
-    echo "⚠️  IMPORTANT: Edit .env file and add your API keys:"
+    echo "IMPORTANT: Edit .env file and add your API keys:"
     echo "   - GEMINI_API_KEY"
     echo "   - PLAID_CLIENT_ID"
     echo "   - PLAID_SECRET"
@@ -2420,7 +2420,7 @@ else
 fi
 
 echo ""
-echo "✅ Setup complete!"
+echo "Setup complete!"
 echo ""
 echo "Next steps:"
 echo "1. Edit .env file with your API keys"
@@ -2799,13 +2799,13 @@ git commit -m "chore: final verification and testing complete"
 
 All tasks completed! The loan assessment backend is fully implemented with:
 
-✅ Multi-agent LLM system using LangGraph
-✅ Financial metrics calculation from Plaid data
-✅ Market viability analysis using Google APIs
-✅ REST API with FastAPI
-✅ SQLite database for local storage
-✅ Comprehensive testing suite
-✅ Setup scripts and documentation
+- Multi-agent LLM system using LangGraph
+- Financial metrics calculation from Plaid data
+- Market viability analysis using Google APIs
+- REST API with FastAPI
+- SQLite database for local storage
+- Comprehensive testing suite
+- Setup scripts and documentation
 
 **Next Steps:**
 1. Add your API keys to `.env`

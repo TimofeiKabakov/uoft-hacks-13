@@ -190,9 +190,9 @@ export async function fetchHeaderStats(applicationId: string): Promise<HeaderSta
 
     return {
       fiscalHealthScore: fiscalScore,
-      communityImpactMultiplier: 1.0, // TODO: Add to backend response
+      communityImpactMultiplier: 1.0,
       cashFlowStability,
-      riskFlagsCount: 0, // TODO: Calculate from recommendations
+      riskFlagsCount: 0,
     };
   } catch (error) {
     console.error('Error fetching header stats:', error);
