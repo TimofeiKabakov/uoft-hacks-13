@@ -135,6 +135,39 @@ class GoogleService:
         distance = R * c
         return distance
 
+    def places_autocomplete(
+        self, input_text: str, session_token: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Place autocomplete predictions for address search.
+
+        Args:
+            input_text: The text string on which to search.
+            session_token: Optional session token for billing.
+
+        Returns:
+            List of predictions (place_id, description, structured_formatting, etc.)
+        """
+        client = self._get_places_client()
+        return client.places_autocomplete(
+            input_text,
+            session_token=session_token,
+            types="address",
+        )
+
+    def reverse_geocode(self, lat: float, lng: float) -> Optional[Dict[str, Any]]:
+        """
+        Reverse geocode coordinates to address.
+
+        Returns:
+            First result with formatted_address and address_components, or None.
+        """
+        client = self._get_maps_client()
+        results = client.reverse_geocode((lat, lng))
+        if not results:
+            return None
+        return results[0]
+
     def geocode_address(self, address: str) -> Optional[Dict[str, float]]:
         """
         Convert address to coordinates
@@ -158,16 +191,28 @@ class GoogleService:
 
         return None
 
-    def get_place_details(self, place_id: str) -> Dict[str, Any]:
+    def get_place_details(
+        self, place_id: str, session_token: Optional[str] = None
+    ) -> Dict[str, Any]:
         """
-        Get detailed information about a place
+        Get detailed information about a place (formatted_address, geometry, address_components).
 
         Args:
             place_id: Google Places ID
+            session_token: Optional session token (use same as autocomplete for billing)
 
         Returns:
-            Place details
+            Place details (result dict from API)
         """
         client = self._get_places_client()
-        result = client.place(place_id)
-        return result.get('result', {})
+        result = client.place(
+            place_id,
+            session_token=session_token,
+            fields=["formatted_address", "geometry", "address_component"],
+        )
+        data = result.get("result", {})
+        # API/library may return address_component (singular); frontend expects address_components
+        if "address_components" not in data and "address_component" in data:
+            data = dict(data)
+            data["address_components"] = data.pop("address_component", [])
+        return data

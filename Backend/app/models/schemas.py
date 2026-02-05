@@ -96,6 +96,14 @@ class MarketAnalysisResponse(BaseModel):
     nearby_businesses: List[NearbyBusiness] = []
 
 
+class ReasoningLogEntry(BaseModel):
+    """Single entry in the agent reasoning log for traceability."""
+    agent: str
+    message: str
+    timestamp: str
+    severity: Optional[str] = "info"  # info, success, warning, error
+
+
 class AssessmentResponse(BaseModel):
     eligibility: Eligibility
     confidence_score: float = Field(..., ge=0, le=100)
@@ -105,6 +113,7 @@ class AssessmentResponse(BaseModel):
     financial_metrics: FinancialMetricsResponse
     market_analysis: MarketAnalysisResponse
     assessed_at: datetime
+    reasoning_log: Optional[List[ReasoningLogEntry]] = None
 
 
 class ApplicationStatusResponse(BaseModel):

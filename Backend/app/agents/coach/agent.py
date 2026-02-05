@@ -5,7 +5,10 @@ Generates personalized recommendations and provides guidance to applicants
 """
 import json
 import re
-from typing import Dict, Any, List
+import logging
+from typing import Dict, Any, List, Optional
+
+from pydantic import BaseModel, Field
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from app.agents.coach.prompts import (
@@ -30,6 +33,40 @@ class CoachAgent:
             llm: Shared LLM instance
         """
         self.llm = llm
+
+    # ----- Structured output schema (recommended for Gemini 3) -----
+
+    class _Evidence(BaseModel):
+        evidence_transactions: List[Dict[str, Any]] = Field(default_factory=list)
+        evidence_patterns: List[str] = Field(default_factory=list)
+        evidence_stats: Dict[str, Any] = Field(default_factory=dict)
+
+    class _RecommendationItem(BaseModel):
+        priority: str
+        category: str
+        title: str
+        evidence_summary: str
+        why_matters: str
+        recommended_action: str
+        expected_impact: str
+        evidence_transactions: List[Dict[str, Any]] = Field(default_factory=list)
+        evidence_patterns: List[str] = Field(default_factory=list)
+        evidence_stats: Dict[str, Any] = Field(default_factory=dict)
+
+    class _RecommendationsOutput(BaseModel):
+        recommendations: List["CoachAgent._RecommendationItem"]  # type: ignore
+
+    @staticmethod
+    def _normalize_llm_text(content: Any) -> str:
+        """Gemini/LangChain may return content as list of blocks; normalize to string."""
+        if isinstance(content, list):
+            return " ".join(
+                (getattr(block, "text", None) or (block if isinstance(block, str) else str(block)))
+                for block in content
+            ).strip()
+        if isinstance(content, str):
+            return content
+        return str(content)
 
     async def generate_recommendations(
         self,
@@ -84,17 +121,29 @@ class CoachAgent:
                 reasoning=assessment_data.get('reasoning', '')
             )
 
-            # Call LLM
-            response = await self.llm.ainvoke(prompt)
-            response_text = response.content
+            # Prefer structured output (Gemini 3 supports native JSON schema)
+            try:
+                structured = self.llm.with_structured_output(self._RecommendationsOutput, method="json_schema")
+                out = await structured.ainvoke(prompt)
+                recs = out.model_dump().get("recommendations", []) if hasattr(out, "model_dump") else out.get("recommendations", [])
+                if isinstance(recs, list) and len(recs) > 0:
+                    return recs
+            except Exception as e:
+                logging.getLogger(__name__).warning(f"Coach structured output failed; falling back to parsing: {e}")
 
-            # Parse JSON response
+            # Fallback: Call LLM and parse text
+            response = await self.llm.ainvoke(prompt)
+            response_text = self._normalize_llm_text(response.content)
             recommendations = self._parse_recommendations_response(response_text)
+
+            # If parsing fails, return default recommendations (never empty on parse errors)
+            if not recommendations:
+                return self._get_default_recommendations(financial_data, market_data)
 
             return recommendations
 
         except Exception as e:
-            print(f"Error generating recommendations: {str(e)}")
+            logging.getLogger(__name__).error(f"Error generating recommendations: {str(e)}", exc_info=True)
             # Return default recommendations on error
             return self._get_default_recommendations(financial_data, market_data)
 
@@ -137,7 +186,7 @@ class CoachAgent:
 
             # Call LLM
             response = await self.llm.ainvoke(prompt)
-            response_text = response.content
+            response_text = self._normalize_llm_text(response.content)
 
             # Parse JSON response
             result = self._parse_coach_response(response_text)
@@ -159,6 +208,7 @@ class CoachAgent:
     def _parse_recommendations_response(self, response_text: str) -> List[Dict[str, Any]]:
         """Parse LLM response for recommendations"""
         try:
+            response_text = self._normalize_llm_text(response_text)
             # Try to extract JSON from response
             json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
             if json_match:
@@ -170,12 +220,20 @@ class CoachAgent:
             return data.get('recommendations', [])
 
         except Exception as e:
-            print(f"Error parsing recommendations response: {str(e)}")
-            return []
+            logging.getLogger(__name__).warning(f"Error parsing recommendations response: {str(e)}")
+            # Try a naive single-quote fix as last resort
+            try:
+                fixed = re.sub(r"'([^']*)'(\s*):", r'"\1"\2:', response_text)
+                fixed = re.sub(r":\s*'([^']*)'", r': "\1"', fixed)
+                data = json.loads(fixed)
+                return data.get("recommendations", [])
+            except Exception:
+                return []
 
     def _parse_coach_response(self, response_text: str) -> Dict[str, Any]:
         """Parse LLM response for Q&A"""
         try:
+            response_text = self._normalize_llm_text(response_text)
             # Try to extract JSON from response
             json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
             if json_match:

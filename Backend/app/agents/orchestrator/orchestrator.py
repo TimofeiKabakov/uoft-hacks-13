@@ -81,10 +81,20 @@ class Orchestrator:
         """
         start_time = datetime.now()
         messages = []
+        reasoning_log = []
+
+        def _log(agent: str, message: str, severity: str = "info") -> None:
+            messages.append(message)
+            reasoning_log.append({
+                "agent": agent,
+                "message": message,
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "severity": severity,
+            })
 
         try:
             # Phase 1: Run Financial Analyst and Market Researcher in PARALLEL
-            messages.append("Starting parallel analysis (Financial + Market)")
+            _log("Orchestrator", "Starting parallel analysis (Financial + Market)")
 
             financial_task = self.financial_analyst.analyze(
                 access_token=access_token,
@@ -111,19 +121,19 @@ class Orchestrator:
 
             # Handle exceptions from parallel execution
             if isinstance(financial_results, Exception):
-                messages.append(f"Financial analysis error: {str(financial_results)}")
+                _log("FinancialAnalyst", f"Financial analysis error: {str(financial_results)}", "error")
                 financial_results = self._get_default_financial_results(str(financial_results))
             else:
-                messages.append("Financial analysis completed")
+                _log("FinancialAnalyst", "Financial analysis completed", "success")
 
             if isinstance(market_results, Exception):
-                messages.append(f"Market analysis error: {str(market_results)}")
+                _log("MarketResearcher", f"Market analysis error: {str(market_results)}", "error")
                 market_results = self._get_default_market_results(str(market_results))
             else:
-                messages.append("Market analysis completed")
+                _log("MarketResearcher", "Market analysis completed", "success")
 
             # Phase 2: Run Risk Assessor with results from both agents
-            messages.append("Starting risk assessment")
+            _log("RiskAssessor", "Starting risk assessment")
 
             risk_results = await self.risk_assessor.assess(
                 user_job=user_job,
@@ -134,10 +144,10 @@ class Orchestrator:
                 market_analysis=market_results
             )
 
-            messages.append("Risk assessment completed")
+            _log("RiskAssessor", "Risk assessment completed", "success")
 
             # Phase 3: Generate Recommendations via Coach Agent
-            messages.append("Generating personalized recommendations")
+            _log("Coach", "Generating personalized recommendations")
 
             try:
                 recommendations = await self.coach.generate_recommendations(
@@ -149,9 +159,9 @@ class Orchestrator:
                     loan_amount=loan_amount,
                     loan_purpose=loan_purpose
                 )
-                messages.append(f"Generated {len(recommendations)} recommendations")
+                _log("Coach", f"Generated {len(recommendations)} recommendations", "success")
             except Exception as e:
-                messages.append(f"Recommendation generation error: {str(e)}")
+                _log("Coach", f"Recommendation generation error: {str(e)}", "error")
                 recommendations = []
 
             # Calculate processing time
@@ -166,6 +176,7 @@ class Orchestrator:
                 'market_analysis': market_results,
                 'final_assessment': risk_results,
                 'recommendations': recommendations,
+                'reasoning_log': reasoning_log,
                 'metadata': {
                     'processing_time_seconds': processing_time,
                     'start_time': start_time.isoformat(),
@@ -181,7 +192,7 @@ class Orchestrator:
             end_time = datetime.now()
             processing_time = (end_time - start_time).total_seconds()
 
-            messages.append(f"Orchestration error: {str(e)}")
+            _log("Orchestrator", f"Orchestration error: {str(e)}", "error")
 
             return {
                 'success': False,
@@ -191,6 +202,7 @@ class Orchestrator:
                 'market_analysis': self._get_default_market_results(str(e)),
                 'final_assessment': self._get_default_risk_results(str(e)),
                 'recommendations': [],
+                'reasoning_log': reasoning_log,
                 'metadata': {
                     'processing_time_seconds': processing_time,
                     'start_time': start_time.isoformat(),
@@ -242,7 +254,7 @@ class Orchestrator:
             'success': False,
             'error': error,
             'competitor_count': 0,
-            'market_density': 'unknown',
+            'market_density': 'medium',
             'viability_score': 50.0,
             'nearby_businesses': [],
             'market_insights': f'Error in market analysis: {error}',

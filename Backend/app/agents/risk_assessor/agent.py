@@ -3,12 +3,33 @@ Risk Assessor Agent
 
 Synthesizes financial and market data to make final loan decisions
 """
-from typing import Dict, Any
+from typing import Dict, Any, Optional, List
 import json
 import re
+import logging
+from pydantic import BaseModel, Field
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from .prompts import get_assessment_prompt, SYSTEM_PROMPT
+
+logger = logging.getLogger(__name__)
+
+
+class KeyFactors(BaseModel):
+    """Key factors in the assessment"""
+    financial_score: float = Field(ge=0, le=100)
+    market_score: float = Field(ge=0, le=100)
+    overall_score: float = Field(ge=0, le=100)
+
+
+class AssessmentOutput(BaseModel):
+    """Structured output schema for risk assessment"""
+    eligibility: str = Field(description="One of: approved, denied, review")
+    confidence_score: float = Field(ge=0, le=100, description="Confidence score 0-100")
+    risk_level: str = Field(description="One of: low, medium, high")
+    reasoning: str = Field(description="Detailed 2-3 sentence explanation of decision")
+    recommendations: List[str] = Field(description="List of specific recommendations")
+    key_factors: KeyFactors
 
 
 class RiskAssessor:
@@ -62,12 +83,29 @@ class RiskAssessor:
                 market_analysis=market_analysis
             )
 
-            # Get LLM assessment
-            response = self.llm.invoke(prompt)
-            content = response.content
-
-            # Parse LLM response
-            assessment = self._parse_response(content)
+            # Use structured output to force valid JSON (Gemini 3 supports this)
+            try:
+                structured_llm = self.llm.with_structured_output(AssessmentOutput, method="json_schema")
+                assessment_obj = structured_llm.invoke(prompt)
+                # Convert Pydantic model to dict
+                assessment = assessment_obj.model_dump()
+            except Exception as struct_error:
+                logger.warning(f"Structured output failed, falling back to parsing: {struct_error}")
+                # Fallback to text parsing if structured output fails
+                response = self.llm.invoke(prompt)
+                content = response.content
+                # LangChain/Gemini can return content as list of blocks (e.g. Gemini 3); normalize to str
+                if isinstance(content, list):
+                    content = " ".join(
+                        (getattr(block, "text", None) or str(block) if not isinstance(block, str) else block)
+                        for block in content
+                    )
+                elif not isinstance(content, str):
+                    content = str(content)
+                
+                logger.debug(f"Raw LLM response (first 500 chars): {content[:500]}")
+                # Parse LLM response
+                assessment = self._parse_response(content)
 
             # Validate and enhance assessment
             assessment = self._validate_assessment(
@@ -100,37 +138,79 @@ class RiskAssessor:
 
     def _parse_response(self, content: str) -> Dict[str, Any]:
         """
-        Parse LLM response to extract assessment
-
-        Args:
-            content: LLM response content
-
-        Returns:
-            Parsed assessment dictionary
+        Parse LLM response to extract assessment JSON.
+        Handles markdown code blocks, raw JSON, and balanced-brace extraction.
         """
-        # Try to extract JSON from response
-        json_match = re.search(r'\{.*\}', content, re.DOTALL)
+        if isinstance(content, list):
+            content = " ".join(
+                (getattr(block, "text", None) or str(block) if not isinstance(block, str) else block)
+                for block in content
+            )
+        if not isinstance(content, str):
+            content = str(content)
 
+        # 1) Extract from markdown code block (```json ... ``` or ``` ... ```)
+        for pattern in (r"```(?:json)?\s*([\s\S]*?)\s*```", r"```\s*([\s\S]*?)\s*```"):
+            match = re.search(pattern, content, re.IGNORECASE)
+            if match:
+                raw = match.group(1).strip()
+                out = self._try_parse_json(raw)
+                if out is not None:
+                    return out
+
+        # 2) Extract first balanced {...} object
+        start = content.find("{")
+        if start != -1:
+            depth = 0
+            for i in range(start, len(content)):
+                if content[i] == "{":
+                    depth += 1
+                elif content[i] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        raw = content[start : i + 1]
+                        out = self._try_parse_json(raw)
+                        if out is not None:
+                            return out
+                        break
+
+        # 3) Greedy regex as last resort
+        json_match = re.search(r"\{[\s\S]*\}", content)
         if json_match:
-            try:
-                assessment = json.loads(json_match.group())
-                return assessment
-            except json.JSONDecodeError:
-                pass
+            out = self._try_parse_json(json_match.group())
+            if out is not None:
+                return out
 
-        # Fallback if parsing fails
         return {
-            'eligibility': 'review',
-            'confidence_score': 50.0,
-            'risk_level': 'medium',
-            'reasoning': 'Unable to parse LLM response - manual review recommended',
-            'recommendations': ['Manual review required'],
-            'key_factors': {
-                'financial_score': 50.0,
-                'market_score': 50.0,
-                'overall_score': 50.0
-            }
+            "eligibility": "review",
+            "confidence_score": 50.0,
+            "risk_level": "medium",
+            "reasoning": "Unable to parse LLM response - manual review recommended",
+            "recommendations": ["Manual review required"],
+            "key_factors": {
+                "financial_score": 50.0,
+                "market_score": 50.0,
+                "overall_score": 50.0,
+            },
         }
+
+    def _try_parse_json(self, raw: str) -> Optional[Dict[str, Any]]:
+        """Try to parse a string as JSON; return None on failure."""
+        if not raw or not raw.strip():
+            return None
+        raw = raw.strip()
+        # Fix common LLM issues: replace single quotes with double (careful with apostrophes)
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            pass
+        # Try replacing single-quoted keys/strings (naive, for last resort)
+        try:
+            fixed = re.sub(r"'([^']*)'(\s*):", r'"\1"\2:', raw)
+            fixed = re.sub(r":\s*'([^']*)'", r': "\1"', fixed)
+            return json.loads(fixed)
+        except (json.JSONDecodeError, TypeError):
+            return None
 
     def _validate_assessment(
         self,
@@ -149,7 +229,7 @@ class RiskAssessor:
         Returns:
             Validated and enhanced assessment
         """
-        # Ensure required fields exist
+        # Ensure required fields exist and are the right type
         if 'eligibility' not in assessment:
             assessment['eligibility'] = 'review'
 
@@ -161,6 +241,11 @@ class RiskAssessor:
 
         if 'reasoning' not in assessment:
             assessment['reasoning'] = 'Assessment completed'
+        # LLM may return reasoning as a list (e.g. multiple blocks); normalize to str
+        if isinstance(assessment['reasoning'], list):
+            assessment['reasoning'] = ' '.join(str(x) for x in assessment['reasoning'])
+        elif not isinstance(assessment['reasoning'], str):
+            assessment['reasoning'] = str(assessment['reasoning'])
 
         if 'recommendations' not in assessment:
             assessment['recommendations'] = []

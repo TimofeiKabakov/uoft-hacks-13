@@ -18,7 +18,13 @@ def test_settings_loads_from_env(monkeypatch):
     assert settings.PLAID_SECRET == "test_secret"
 
 
-def test_settings_validates_required_fields():
+def test_settings_validates_required_fields(monkeypatch):
     """Test that missing required fields raise validation error"""
+    required = (
+        "GEMINI_API_KEY", "PLAID_CLIENT_ID", "PLAID_SECRET",
+        "GOOGLE_MAPS_API_KEY", "GOOGLE_PLACES_API_KEY", "ENCRYPTION_KEY",
+    )
+    for key in required:
+        monkeypatch.delenv(key, raising=False)
     with pytest.raises(Exception):
-        Settings(_env_file=None)
+        Settings()

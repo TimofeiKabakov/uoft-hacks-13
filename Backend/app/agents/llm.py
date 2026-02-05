@@ -24,7 +24,7 @@ def get_llm() -> ChatGoogleGenerativeAI:
 
     if _llm_instance is None:
         _llm_instance = ChatGoogleGenerativeAI(
-            model="gemini-1.5-pro",
+            model="gemini-3-pro-preview",
             google_api_key=settings.GEMINI_API_KEY,
             temperature=0.3
         )

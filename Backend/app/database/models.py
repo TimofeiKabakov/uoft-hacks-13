@@ -82,6 +82,7 @@ class Assessment(Base):
     risk_level = Column(String, nullable=True)  # low, medium, high
     reasoning = Column(Text, nullable=True)
     recommendations = Column(Text, nullable=True)  # JSON array
+    reasoning_log = Column(Text, nullable=True)  # JSON array of {agent, message, timestamp, severity}
     assessed_at = Column(DateTime(timezone=True), server_default=func.now())
 
 

@@ -94,12 +94,16 @@ class MarketResearcher:
             }
 
         except Exception as e:
+            # Log error for debugging
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Market research error: {type(e).__name__}: {str(e)}", exc_info=True)
             # Return default analysis on error
             return {
                 'success': False,
                 'error': str(e),
                 'competitor_count': 0,
-                'market_density': 'unknown',
+                'market_density': 'medium',
                 'viability_score': 50.0,
                 'nearby_businesses': [],
                 'market_insights': f'Error analyzing market: {str(e)}',
@@ -180,7 +184,8 @@ class MarketResearcher:
 
         # Competitor quality impact (based on ratings)
         if nearby_businesses:
-            avg_rating = sum(b.get('rating', 0) for b in nearby_businesses) / len(nearby_businesses)
+            ratings = [b.get("rating") for b in nearby_businesses if b.get("rating") is not None]
+            avg_rating = (sum(ratings) / len(ratings)) if ratings else 0.0
             if avg_rating >= 4.5:
                 quality_penalty = -10.0
             elif avg_rating >= 4.0:
@@ -236,7 +241,11 @@ class MarketResearcher:
 
         # Check for low-rated competitors
         if nearby_businesses:
-            low_rated = [b for b in nearby_businesses if b.get('rating', 5.0) < 3.5]
+            low_rated = [
+                b
+                for b in nearby_businesses
+                if (b.get("rating") is not None and b.get("rating") < 3.5)
+            ]
             if low_rated:
                 opportunities.append(f"{len(low_rated)} competitors have low ratings - quality differentiation opportunity")
 
@@ -251,7 +260,11 @@ class MarketResearcher:
 
         # Check for highly-rated competitors
         if nearby_businesses:
-            high_rated = [b for b in nearby_businesses if b.get('rating', 0) >= 4.5]
+            high_rated = [
+                b
+                for b in nearby_businesses
+                if (b.get("rating") is not None and b.get("rating") >= 4.5)
+            ]
             if high_rated:
                 risks.append(f"{len(high_rated)} competitors have high ratings (4.5+) - strong competition")
 

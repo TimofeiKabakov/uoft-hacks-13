@@ -34,10 +34,14 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Configure CORS
+# Configure CORS: explicit origins from config + regex for any localhost/127.0.0.1 port
+_app_origins = settings.cors_origins_list if settings else []
+# Allow any origin like http://localhost:PORT or http://127.0.0.1:PORT (dev servers often use different ports)
+_origin_regex = r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins_list if settings else ["*"],
+    allow_origins=_app_origins,
+    allow_origin_regex=_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

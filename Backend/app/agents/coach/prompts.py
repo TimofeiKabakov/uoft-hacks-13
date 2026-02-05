@@ -52,7 +52,8 @@ Focus on:
 - Areas that directly impact loan approval criteria
 - Low-hanging fruit with high impact
 
-Return ONLY valid JSON in this exact format (no markdown, no code blocks):
+Return only valid JSON with no markdown or code fences. Use exactly these keys per recommendation: priority, category, title, evidence_summary, why_matters, recommended_action, expected_impact, evidence_transactions, evidence_patterns, evidence_stats.
+
 {{
   "recommendations": [
     {{

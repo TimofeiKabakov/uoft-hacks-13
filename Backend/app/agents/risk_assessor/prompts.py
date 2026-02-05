@@ -83,23 +83,13 @@ Consider:
    - Market success probability
    - Combined risk factors
 
-Provide your assessment in the following JSON format:
-{{
-    "eligibility": "approved" | "denied" | "review",
-    "confidence_score": <float 0-100>,
-    "risk_level": "low" | "medium" | "high",
-    "reasoning": "<detailed 2-3 sentence explanation of decision>",
-    "recommendations": [
-        "<specific recommendation 1>",
-        "<specific recommendation 2>",
-        "<specific recommendation 3>"
-    ],
-    "key_factors": {{
-        "financial_score": <float 0-100>,
-        "market_score": <float 0-100>,
-        "overall_score": <float 0-100>
-    }}
-}}
+Provide your assessment with:
+- eligibility: "approved", "denied", or "review"
+- confidence_score: float between 0-100
+- risk_level: "low", "medium", or "high"
+- reasoning: detailed 2-3 sentence explanation of your decision
+- recommendations: list of 3 specific actionable recommendations
+- key_factors: financial_score (0-100), market_score (0-100), overall_score (0-100)
 
 Be thorough and specific in your reasoning. The decision must be well-justified based on the data.
 """

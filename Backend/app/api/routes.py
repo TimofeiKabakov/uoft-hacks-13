@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import uuid
 import json
 from datetime import datetime
@@ -33,10 +34,12 @@ from app.models.schemas import (
     FinancialSnapshotResponse,
     CashFlowDataPoint,
     SpendingCategory,
-    StabilityDataPoint
+    StabilityDataPoint,
+    ReasoningLogEntry,
 )
 from app.core.security import encrypt_token, decrypt_token
 from app.services.plaid_service import PlaidService
+from app.services.google_service import GoogleService
 from app.agents.orchestrator import Orchestrator
 from sqlalchemy import select
 
@@ -78,6 +81,130 @@ async def create_application(
         status=ApplicationStatus.PENDING_PLAID,
         created_at=db_application.created_at
     )
+
+
+@router.post("/applications/{application_id}/plaid-link-token")
+async def get_plaid_link_token(
+    application_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Create a Plaid Link token for the application (for Link UI or sandbox).
+    """
+    result = await db.execute(
+        select(models.Application).where(models.Application.id == application_id)
+    )
+    application = result.scalar_one_or_none()
+    if not application:
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    plaid_service = PlaidService()
+    link_token = plaid_service.create_link_token(application_id)
+    return {"link_token": link_token}
+
+
+# ----- Places proxy (address search) - uses backend Google keys, no frontend key needed -----
+
+
+@router.get("/places/autocomplete")
+async def places_autocomplete(
+    query: Optional[str] = Query(None, alias="input"),
+    session_token: Optional[str] = None,
+):
+    """
+    Proxy for Google Places Autocomplete (address search).
+    Returns predictions for the LocationStep address search.
+    """
+    if not query or len(query.strip()) < 2:
+        return {"predictions": []}
+    try:
+        svc = GoogleService()
+        predictions = svc.places_autocomplete(query.strip(), session_token=session_token)
+        return {"predictions": predictions}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Places autocomplete failed: {str(e)}")
+
+
+@router.get("/places/details")
+async def places_details(
+    place_id: str,
+    session_token: Optional[str] = None,
+):
+    """
+    Proxy for Google Place Details (formatted_address, geometry, address_components).
+    """
+    if not place_id:
+        raise HTTPException(status_code=400, detail="place_id required")
+    try:
+        svc = GoogleService()
+        result = svc.get_place_details(place_id, session_token=session_token)
+        return {"result": result, "status": "OK" if result else "ZERO_RESULTS"}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Place details failed: {str(e)}")
+
+
+@router.get("/places/reverse-geocode")
+async def places_reverse_geocode(lat: float, lng: float):
+    """
+    Reverse geocode lat/lng to address (e.g. for "Use current location").
+    """
+    try:
+        svc = GoogleService()
+        result = svc.reverse_geocode(lat, lng)
+        if not result:
+            return {"results": [], "status": "ZERO_RESULTS"}
+        return {"results": [result], "status": "OK"}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Reverse geocode failed: {str(e)}")
+
+
+class PlaidSandboxRequest(BaseModel):
+    """Request body for sandbox bank connection (no real credentials)."""
+    username: Optional[str] = None
+    password: Optional[str] = None
+    institution_id: Optional[str] = "ins_109508"
+
+
+@router.post("/applications/{application_id}/plaid-sandbox", response_model=PlaidConnectResponse)
+async def connect_plaid_sandbox(
+    application_id: str,
+    body: PlaidSandboxRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Connect using Plaid sandbox: create a sandbox public token, exchange it, and run assessment.
+    Frontend sends optional institution_id (e.g. ins_109508). No real credentials needed.
+    """
+    result = await db.execute(
+        select(models.Application).where(models.Application.id == application_id)
+    )
+    application = result.scalar_one_or_none()
+    if not application:
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    plaid_service = PlaidService()
+    institution_id = body.institution_id or "ins_109508"
+    try:
+        public_token = plaid_service.create_sandbox_public_token(institution_id=institution_id)
+        access_token = plaid_service.exchange_public_token(public_token)
+
+        encrypted_token = encrypt_token(access_token)
+        application.plaid_access_token = encrypted_token
+        application.status = ApplicationStatus.PROCESSING.value
+        await db.commit()
+
+        await process_assessment(application_id, db)
+
+        return PlaidConnectResponse(
+            application_id=application_id,
+            status=ApplicationStatus.PROCESSING,
+            plaid_connected=True
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Sandbox connection failed: {str(e)}"
+        )
 
 
 @router.post("/applications/{application_id}/plaid-connect", response_model=PlaidConnectResponse)
@@ -146,8 +273,16 @@ async def process_assessment(application_id: str, db: AsyncSession):
     if not application:
         return
 
-    # Decrypt access token
-    access_token = decrypt_token(application.plaid_access_token)
+    # Decrypt access token (handle missing/invalid token gracefully)
+    access_token = None
+    if application.plaid_access_token:
+        try:
+            access_token = decrypt_token(application.plaid_access_token)
+        except Exception as e:
+            # Log error but continue - orchestrator will handle missing token
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to decrypt Plaid token for {application_id}: {e}")
 
     # Create orchestrator and run assessment
     orchestrator = Orchestrator()
@@ -167,6 +302,7 @@ async def process_assessment(application_id: str, db: AsyncSession):
     market_analysis = results['market_analysis']
     final_assessment = results['final_assessment']
     recommendations_list = results.get('recommendations', [])
+    reasoning_log = results.get('reasoning_log', [])
 
     # Save results to database
     # Save financial metrics
@@ -186,20 +322,22 @@ async def process_assessment(application_id: str, db: AsyncSession):
     )
     db.add(db_financial)
 
-    # Save market analysis
+    # Save market analysis (market_density must be low/medium/high for schema)
+    density_raw = market_analysis.get('market_density', 'medium')
+    density_val = density_raw if density_raw in ('low', 'medium', 'high') else 'medium'
     market_id = str(uuid.uuid4())
     db_market = models.MarketAnalysis(
         id=market_id,
         application_id=application_id,
         competitor_count=market_analysis.get('competitor_count', 0),
-        market_density=market_analysis.get('market_density', 'unknown'),
+        market_density=density_val,
         viability_score=market_analysis.get('viability_score', 50.0),
         market_insights=market_analysis.get('market_insights', ''),
         nearby_businesses=json.dumps(market_analysis.get('nearby_businesses', []))
     )
     db.add(db_market)
 
-    # Save assessment
+    # Save assessment (including reasoning log for traceability)
     assessment_id = str(uuid.uuid4())
     db_assessment = models.Assessment(
         id=assessment_id,
@@ -208,23 +346,28 @@ async def process_assessment(application_id: str, db: AsyncSession):
         confidence_score=final_assessment.get('confidence_score', 0.0),
         risk_level=final_assessment.get('risk_level', 'medium'),
         reasoning=final_assessment.get('reasoning', ''),
-        recommendations=json.dumps(final_assessment.get('recommendations', []))
+        recommendations=json.dumps(final_assessment.get('recommendations', [])),
+        reasoning_log=json.dumps(reasoning_log) if reasoning_log else None,
     )
     db.add(db_assessment)
 
-    # Save individual recommendations
+    # Save individual recommendations (normalize priority to lowercase for DB/enum)
     for rec in recommendations_list:
         rec_id = str(uuid.uuid4())
+        priority_raw = rec.get('priority', 'medium')
+        priority_val = priority_raw.lower() if isinstance(priority_raw, str) else 'medium'
+        if priority_val not in ('high', 'medium', 'low'):
+            priority_val = 'medium'
         db_recommendation = models.Recommendation(
             id=rec_id,
             application_id=application_id,
-            priority=rec.get('priority', 'medium'),
-            category=rec.get('category', 'General'),
-            title=rec.get('title', ''),
-            evidence_summary=rec.get('evidence_summary', ''),
-            why_matters=rec.get('why_matters', ''),
-            recommended_action=rec.get('recommended_action', ''),
-            expected_impact=rec.get('expected_impact', ''),
+            priority=priority_val,
+            category=rec.get('category') or 'General',
+            title=rec.get('title') or '',
+            evidence_summary=rec.get('evidence_summary') or '',
+            why_matters=rec.get('why_matters') or '',
+            recommended_action=rec.get('recommended_action') or '',
+            expected_impact=rec.get('expected_impact') or '',
             evidence_data=json.dumps({
                 'transactions': rec.get('evidence_transactions', []),
                 'patterns': rec.get('evidence_patterns', []),
@@ -315,6 +458,12 @@ async def get_assessment(
 
     # Parse nearby businesses
     nearby_businesses = json.loads(market.nearby_businesses) if market.nearby_businesses else []
+    # Ensure market_density is enum value (low/medium/high) for frontend
+    market_density_val = market.market_density if market.market_density in ('low', 'medium', 'high') else 'medium'
+
+    # Parse reasoning log for frontend traceability
+    reasoning_log_data = json.loads(assessment.reasoning_log) if getattr(assessment, 'reasoning_log', None) else None
+    reasoning_log_entries = [ReasoningLogEntry(**e) for e in reasoning_log_data] if reasoning_log_data else None
 
     return AssessmentResponse(
         eligibility=Eligibility(assessment.eligibility),
@@ -334,12 +483,13 @@ async def get_assessment(
         ),
         market_analysis=MarketAnalysisResponse(
             competitor_count=market.competitor_count,
-            market_density=MarketDensity(market.market_density),
+            market_density=MarketDensity(market_density_val),
             viability_score=market.viability_score,
             market_insights=market.market_insights,
             nearby_businesses=[NearbyBusiness(**b) for b in nearby_businesses]
         ),
-        assessed_at=assessment.assessed_at
+        assessed_at=assessment.assessed_at,
+        reasoning_log=reasoning_log_entries,
     )
 
 

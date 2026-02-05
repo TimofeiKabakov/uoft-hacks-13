@@ -52,6 +52,9 @@ class FinancialAnalyst:
             Dictionary with financial metrics and analysis
         """
         try:
+            if not access_token:
+                raise ValueError("Plaid access token is missing - bank connection required")
+
             # Get financial data from Plaid
             end_date = datetime.now()
             start_date = end_date - timedelta(days=180)
@@ -87,6 +90,10 @@ class FinancialAnalyst:
             }
 
         except Exception as e:
+            # Log error for debugging
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Financial analysis error: {type(e).__name__}: {str(e)}", exc_info=True)
             # Return default metrics on error
             return {
                 'success': False,
